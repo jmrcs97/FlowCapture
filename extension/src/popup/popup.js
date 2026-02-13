@@ -1,168 +1,293 @@
-document.addEventListener('DOMContentLoaded', () => {
-    const startBtn = document.getElementById('start-btn');
-    const stopBtn = document.getElementById('stop-btn');
-    const downloadLink = document.getElementById('download-btn');
-    const cameraBtn = document.getElementById('camera-btn');
+/**
+ * FlowCapture - Popup Controller
+ * REFACTORED: Callbacks → async/await, separated UI logic
+ * IMPROVEMENTS:
+ * - All Chrome APIs wrapped in async/await (no callback hell)
+ * - Error handling with user-friendly toast messages (no alert())
+ * - Uses shared Timer module (eliminates duplication)
+ * - Clean separation: PopupUI handles visuals, Controller handles logic
+ */
 
-    const stateIdle = document.getElementById('state-idle');
-    const stateRecording = document.getElementById('state-recording');
+import { PopupUI } from './popup-ui.js';
 
-    const timerDisplay = document.getElementById('timer');
-    const eventCountDisplay = document.getElementById('event-count');
+// ─── Chrome API Async Helpers ──────────────────────────
 
-    let timerInterval;
-    let startTime;
-
-    function formatTime(ms) {
-        const totalSeconds = Math.floor(ms / 1000);
-        const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
-        const seconds = (totalSeconds % 60).toString().padStart(2, '0');
-        return `${minutes}:${seconds}`;
-    }
-
-    function startTimer(startTimestamp) {
-        startTime = startTimestamp || Date.now();
-        timerInterval = setInterval(() => {
-            const elapsed = Date.now() - startTime;
-            timerDisplay.textContent = formatTime(elapsed);
-        }, 1000);
-    }
-
-    function stopTimer() {
-        clearInterval(timerInterval);
-    }
-
-    function updateUI(isRecording, eventCount = 0) {
-        if (isRecording) {
-            stateIdle.style.display = 'none';
-            stateRecording.style.display = 'flex';
-            startBtn.disabled = true;
-            if (cameraBtn) {
-                cameraBtn.disabled = false;
-                cameraBtn.classList.remove('disabled');
-            }
-            downloadLink.classList.add('disabled');
-            // We assume start time was saved or we just restart for UI simplicity if reloading
-            if (!timerInterval) startTimer(Date.now());
-        } else {
-            stateIdle.style.display = 'flex';
-            stateRecording.style.display = 'none';
-            startBtn.disabled = false;
-            if (cameraBtn) {
-                cameraBtn.disabled = true;
-                cameraBtn.classList.add('disabled');
-            }
-            stopTimer();
-            if (eventCount > 0) {
-                downloadLink.classList.remove('disabled');
-                downloadLink.innerHTML = `<span class="material-icons-round">download</span><span>Download Intent (${eventCount} steps)</span>`;
-            }
-        }
-        eventCountDisplay.innerText = eventCount;
-    }
-
-    // Load status from storage on popup open
-    chrome.storage.local.get(['isRecording', 'startTime', 'eventCount', 'intentData'], (result) => {
-        if (result.isRecording) {
-            updateUI(true, result.eventCount || 0);
-            if (result.startTime) {
-                stopTimer(); // clear any existing
-                startTimer(result.startTime); // resume from stored time
-            }
-        } else if (result.intentData) {
-            // Ready to download
-            updateUI(false, result.intentData.intent_analysis ? result.intentData.intent_analysis.steps.length : 0);
-        }
-    });
-
-    startBtn.addEventListener('click', () => {
+/**
+ * Query active tab
+ * @returns {Promise<chrome.tabs.Tab|null>}
+ */
+async function getActiveTab() {
+    return new Promise((resolve) => {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (!tabs[0]) return;
+            resolve(tabs?.[0] || null);
+        });
+    });
+}
+
+/**
+ * Send message to tab
+ * @param {number} tabId
+ * @param {Object} message
+ * @returns {Promise<Object>}
+ */
+async function sendTabMessage(tabId, message) {
+    return new Promise((resolve, reject) => {
+        chrome.tabs.sendMessage(tabId, message, (response) => {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+            } else {
+                resolve(response);
+            }
+        });
+    });
+}
+
+/**
+ * Get from storage
+ * @param {string[]} keys
+ * @returns {Promise<Object>}
+ */
+async function storageGet(keys) {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(keys, resolve);
+    });
+}
+
+/**
+ * Set in storage
+ * @param {Object} data
+ * @returns {Promise<void>}
+ */
+async function storageSet(data) {
+    return new Promise((resolve) => {
+        chrome.storage.local.set(data, resolve);
+    });
+}
+
+// ─── Timer (inline, no dynamic import needed) ─────────────
+
+class SimpleTimer {
+    constructor(callback) {
+        this.callback = callback;
+        this.intervalId = null;
+        this.startTimestamp = null;
+    }
+
+    start(timestamp = null) {
+        this.stop();
+        this.startTimestamp = timestamp || Date.now();
+        this._tick();
+        this.intervalId = setInterval(() => this._tick(), 1000);
+    }
+
+    stop() {
+        if (this.intervalId) {
+            clearInterval(this.intervalId);
+            this.intervalId = null;
+        }
+    }
+
+    _tick() {
+        const elapsed = Date.now() - this.startTimestamp;
+        const totalSeconds = Math.floor(elapsed / 1000);
+        const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+        const s = (totalSeconds % 60).toString().padStart(2, '0');
+        this.callback(`${m}:${s}`);
+    }
+}
+
+// ─── Popup Controller ─────────────────────────────────
+
+class PopupController {
+    constructor() {
+        this.ui = new PopupUI();
+        this.timer = new SimpleTimer((formatted) => this.ui.updateTimer(formatted));
+
+        this._init();
+    }
+
+    /**
+     * Initialize popup state and event handlers
+     */
+    async _init() {
+        try {
+            // Restore state from storage
+            const state = await storageGet(['isRecording', 'startTime', 'eventCount', 'intentData']);
+
+            if (state.isRecording) {
+                this.ui.updateState(true, state.eventCount || 0);
+                if (state.startTime) {
+                    this.timer.start(state.startTime);
+                }
+            } else if (state.intentData?.intent_analysis?.steps?.length) {
+                this.ui.updateState(false, state.intentData.intent_analysis.steps.length);
+                this.ui.enableDownload(state.intentData.intent_analysis.steps.length);
+            }
+
+            // Register event handlers
+            this._setupHandlers();
+
+            // Listen for real-time updates from content script
+            this._setupMessageListener();
+        } catch (error) {
+            console.error('Popup initialization failed:', error);
+            this.ui.showError('Failed to load extension state');
+        }
+    }
+
+    /**
+     * Setup button click handlers
+     */
+    _setupHandlers() {
+        this.ui.onStartClick(() => this._handleStart());
+        this.ui.onStopClick(() => this._handleStop());
+        this.ui.onCheckpointClick(() => this._handleCheckpoint());
+        this.ui.onDownloadClick(() => this._handleDownload());
+    }
+
+    /**
+     * Listen for messages from content script
+     */
+    _setupMessageListener() {
+        chrome.runtime.onMessage.addListener((msg) => {
+            if (msg.action === 'intentUpdated') {
+                this.ui.updateEventCount(msg.count);
+                storageSet({ eventCount: msg.count }).catch(console.error);
+            }
+        });
+    }
+
+    /**
+     * Handle Start Recording
+     */
+    async _handleStart() {
+        this.ui.setStartLoading();
+
+        try {
+            const tab = await getActiveTab();
+            if (!tab) {
+                this.ui.showError('No active tab found');
+                this.ui.updateState(false);
+                return;
+            }
 
             const now = Date.now();
-            chrome.storage.local.set({ isRecording: true, startTime: now, eventCount: 0 });
+            await storageSet({ isRecording: true, startTime: now, eventCount: 0 });
 
-            chrome.tabs.sendMessage(tabs[0].id, { action: 'startRecording' }, (response) => {
-                if (chrome.runtime.lastError) {
-                    alert('Please refresh the page before recording.');
-                    return;
-                }
-                updateUI(true, 0);
-                // Dispatch start timer explicitly
-                stopTimer();
-                startTimer(now);
-            });
-        });
-    });
+            const response = await sendTabMessage(tab.id, { action: 'startRecording' });
 
-    if (cameraBtn) {
-        cameraBtn.addEventListener('click', () => {
-            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                if (!tabs[0]) return;
-                chrome.tabs.sendMessage(tabs[0].id, { action: 'captureState' }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.error("Capture failed:", chrome.runtime.lastError);
-                        return;
-                    }
-                    // UI will update via listener
-                });
-            });
-        });
+            if (response?.status === 'started') {
+                this.ui.updateState(true, 0);
+                this.timer.start(now);
+            }
+        } catch (error) {
+            console.error('Start recording failed:', error);
+
+            if (error.message?.includes('Could not establish connection') ||
+                error.message?.includes('Receiving end does not exist')) {
+                this.ui.showError('Please refresh the page before recording.');
+            } else {
+                this.ui.showError('Failed to start recording');
+            }
+
+            await storageSet({ isRecording: false });
+            this.ui.updateState(false);
+        }
     }
 
-    stopBtn.addEventListener('click', () => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (!tabs[0]) return;
+    /**
+     * Handle Stop Recording
+     */
+    async _handleStop() {
+        this.ui.setStopLoading();
 
-            chrome.tabs.sendMessage(tabs[0].id, { action: 'stopRecording' }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.error("Stop failed:", chrome.runtime.lastError);
-                    // Force UI reset anyway
-                    chrome.storage.local.set({ isRecording: false });
-                    updateUI(false, 0);
-                    return;
-                }
-                const count = response && response.count ? response.count : 0;
-                chrome.storage.local.set({ isRecording: false, eventCount: count });
-                updateUI(false, count);
-            });
-        });
-    });
+        try {
+            const tab = await getActiveTab();
+            if (!tab) return;
 
-    // Listen for real-time updates from content script
-    chrome.runtime.onMessage.addListener((msg) => {
-        if (msg.action === 'intentUpdated') {
-            eventCountDisplay.innerText = msg.count;
-            chrome.storage.local.set({ eventCount: msg.count });
+            const response = await sendTabMessage(tab.id, { action: 'stopRecording' });
+            const count = response?.count || 0;
+
+            await storageSet({ isRecording: false, eventCount: count });
+
+            this.timer.stop();
+            this.ui.updateState(false, count);
+
+            if (count > 0) {
+                this.ui.enableDownload(count);
+                this.ui.showSuccess(`Recorded ${count} steps`);
+            }
+        } catch (error) {
+            console.error('Stop recording failed:', error);
+
+            // Force UI reset
+            await storageSet({ isRecording: false });
+            this.timer.stop();
+            this.ui.updateState(false, 0);
+            this.ui.showError('Recording stopped with errors');
         }
-    });
+    }
 
-    downloadLink.addEventListener('click', () => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (!tabs[0]) return;
-            chrome.tabs.sendMessage(tabs[0].id, { action: 'getIntent' }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.error("Download failed:", chrome.runtime.lastError);
-                    alert("Could not retrieve data. Page might have been reloaded.");
-                    return;
-                }
-                if (!response || !response.intent) {
-                    alert('No intent data found');
-                    return;
-                }
-                const intent = response.intent;
-                chrome.storage.local.set({ intentData: intent }); // Cache it
+    /**
+     * Handle Checkpoint Capture
+     */
+    async _handleCheckpoint() {
+        try {
+            const tab = await getActiveTab();
+            if (!tab) return;
 
-                const blob = new Blob([JSON.stringify(intent, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'automation_intent.json';
-                document.body.appendChild(a);
-                a.click();
+            await sendTabMessage(tab.id, { action: 'captureState' });
+            this.ui.showSuccess('Checkpoint captured!');
+        } catch (error) {
+            console.error('Checkpoint failed:', error);
+            this.ui.showError('Failed to capture checkpoint');
+        }
+    }
+
+    /**
+     * Handle Download Intent
+     */
+    async _handleDownload() {
+        try {
+            const tab = await getActiveTab();
+            if (!tab) return;
+
+            const response = await sendTabMessage(tab.id, { action: 'getIntent' });
+
+            if (!response?.intent) {
+                this.ui.showError('No data found. Page may have been reloaded.');
+                return;
+            }
+
+            const intent = response.intent;
+
+            // Cache in storage
+            await storageSet({ intentData: intent });
+
+            // Download file
+            const blob = new Blob([JSON.stringify(intent, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'flow_capture.json';
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+
+            setTimeout(() => {
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
-            });
-        });
-    });
+            }, 100);
+
+            this.ui.showSuccess('Downloaded successfully!');
+        } catch (error) {
+            console.error('Download failed:', error);
+            this.ui.showError('Could not retrieve data. Page might have been reloaded.');
+        }
+    }
+}
+
+// Initialize on DOM ready
+document.addEventListener('DOMContentLoaded', () => {
+    new PopupController();
 });

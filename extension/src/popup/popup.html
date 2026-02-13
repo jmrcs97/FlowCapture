@@ -1,481 +1,143 @@
 <!DOCTYPE html>
-<html class="dark" lang="en">
+<html lang="en">
 
 <head>
     <meta charset="utf-8" />
-    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-    <title>FlowCapture Extension Popup</title>
-    <!-- CDN scripts are blocked by default CSP in MV3. We will need to inline or localise these assets for production, 
-         but for development/current request we keep them primarily for structure, and will move styles inline or to css file. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FlowCapture</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
         rel="stylesheet" />
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet" />
-    <style>
-        :root {
-            --primary: #3b82f6;
-            --primary-hover: #2563eb;
-            --bg-dark: #0f172a;
-            --bg-card: #1e293b;
-            --text-main: #ffffff;
-            --text-muted: #94a3b8;
-            --danger: #ef4444;
-            --danger-glow: rgba(239, 68, 68, 0.4);
-        }
-
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            width: 360px;
-            height: 520px;
-            margin: 0;
-            padding: 0;
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg-dark);
-            color: var(--text-main);
-            overflow: hidden;
-        }
-
-        /* Utility Classes */
-        .flex {
-            display: flex;
-        }
-
-        .flex-col {
-            flex-direction: column;
-        }
-
-        .items-center {
-            align-items: center;
-        }
-
-        .justify-between {
-            justify-content: space-between;
-        }
-
-        .justify-center {
-            justify-content: center;
-        }
-
-        .gap-2 {
-            gap: 0.5rem;
-        }
-
-        .gap-3 {
-            gap: 0.75rem;
-        }
-
-        .text-center {
-            text-align: center;
-        }
-
-        .w-full {
-            width: 100%;
-        }
-
-        .relative {
-            position: relative;
-        }
-
-        .absolute {
-            position: absolute;
-        }
-
-        .hidden {
-            display: none !important;
-        }
-
-        /* UI Components */
-        header {
-            padding: 1.5rem 1.5rem 0.5rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .logo-box {
-            width: 32px;
-            height: 32px;
-            background-color: #2563eb;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2);
-        }
-
-        h1 {
-            font-size: 1.125rem;
-            font-weight: 700;
-            margin: 0;
-            letter-spacing: -0.025em;
-        }
-
-        .btn-icon {
-            padding: 0.5rem;
-            background: transparent;
-            border: none;
-            color: var(--text-muted);
-            cursor: pointer;
-            border-radius: 8px;
-            transition: all 0.2s;
-        }
-
-        .btn-icon:hover {
-            background-color: rgba(255, 255, 255, 0.1);
-            color: white;
-        }
-
-        main {
-            flex: 1;
-            padding: 1.5rem;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 2rem;
-        }
-
-        /* IDLE STATE UI */
-        #state-idle {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            width: 100%;
-        }
-
-        .status-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.375rem 1rem;
-            background-color: #1e293b;
-            border: 1px solid #334155;
-            border-radius: 9999px;
-            margin-bottom: 0.75rem;
-        }
-
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: #94a3b8;
-        }
-
-        .status-text {
-            font-size: 0.75rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            color: #cbd5e1;
-            letter-spacing: 0.05em;
-        }
-
-        .hero-text h2 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            margin: 0 0 0.75rem 0;
-        }
-
-        .hero-text p {
-            font-size: 0.875rem;
-            color: var(--text-muted);
-            line-height: 1.5;
-            max-width: 280px;
-            margin: 0 auto;
-        }
-
-        .start-btn {
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.75rem;
-            padding: 0.875rem;
-            background-color: var(--primary);
-            border: none;
-            border-radius: 0.75rem;
-            color: white;
-            font-weight: 600;
-            font-size: 1rem;
-            cursor: pointer;
-            box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
-            transition: all 0.2s;
-            margin-top: 1.5rem;
-        }
-
-        .start-btn:hover {
-            background-color: var(--primary-hover);
-            transform: translateY(-1px);
-        }
-
-        .start-btn:active {
-            transform: scale(0.98);
-        }
-
-        /* RECORDING STATE UI */
-        #state-recording {
-            display: none;
-            /* Hidden by default */
-            flex-direction: column;
-            align-items: center;
-            width: 100%;
-        }
-
-        .recording-badge {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            margin-bottom: 0.75rem;
-            background-color: rgba(239, 68, 68, 0.15);
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            border: 1px solid rgba(239, 68, 68, 0.2);
-            color: #f87171;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
-        .recording-dot {
-            width: 8px;
-            height: 8px;
-            background-color: #ef4444;
-            border-radius: 50%;
-            position: relative;
-        }
-
-        /* Simple ping animation */
-        .recording-dot::after {
-            content: '';
-            position: absolute;
-            top: -4px;
-            left: -4px;
-            right: -4px;
-            bottom: -4px;
-            border-radius: 50%;
-            background-color: #ef4444;
-            opacity: 0.4;
-            animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
-        }
-
-        .timer-display {
-            font-family: monospace;
-            font-size: 3rem;
-            font-weight: 300;
-            margin-bottom: 0.5rem;
-            letter-spacing: -2px;
-        }
-
-        .timer-label {
-            font-size: 0.875rem;
-            color: var(--text-muted);
-            margin-bottom: 2rem;
-        }
-
-        .stats-card {
-            background-color: var(--bg-card);
-            border: 1px solid #334155;
-            border-radius: 0.75rem;
-            padding: 1rem;
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 2rem;
-        }
-
-        .stats-icon-box {
-            width: 36px;
-            height: 36px;
-            background-color: rgba(59, 130, 246, 0.1);
-            color: var(--primary);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .stats-info {
-            display: flex;
-            flex-direction: column;
-            text-align: left;
-            margin-left: 0.75rem;
-        }
-
-        .stats-label {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            font-weight: 600;
-        }
-
-        .stats-value {
-            font-size: 1.25rem;
-            font-weight: 700;
-        }
-
-        .stop-btn {
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.75rem;
-            padding: 1rem;
-            background-color: transparent;
-            border: 2px solid var(--danger);
-            border-radius: 9999px;
-            color: var(--danger);
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .stop-btn:hover {
-            background-color: rgba(239, 68, 68, 0.1);
-        }
-
-        .stop-icon {
-            width: 12px;
-            height: 12px;
-            background-color: currentColor;
-            border-radius: 2px;
-        }
-
-        /* Footer */
-        footer {
-            padding: 1rem 1.5rem;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-            margin-top: auto;
-        }
-
-        .download-link {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-            font-size: 0.875rem;
-            color: var(--text-muted);
-            text-decoration: none;
-            transition: color 0.2s;
-            cursor: pointer;
-        }
-
-        .download-link:hover {
-            color: var(--primary);
-        }
-
-        .download-link.disabled {
-            opacity: 0.5;
-            pointer-events: none;
-        }
-
-        @keyframes ping {
-
-            75%,
-            100% {
-                transform: scale(2);
-                opacity: 0;
-            }
-        }
-    </style>
+    <link href="popup.css" rel="stylesheet" />
 </head>
 
 <body>
-    <div class="flex flex-col" style="height: 100%;">
+    <div class="app-container">
+
+        <!-- HEADER -->
         <header>
-            <div class="flex items-center gap-2">
-                <div class="logo-box">
-                    <span class="material-icons-round"
-                        style="color: white; font-size: 18px;">radio_button_checked</span>
+            <div class="logo-group">
+                <div class="logo-box" aria-hidden="true">
+                    <span class="material-icons-round">radio_button_checked</span>
                 </div>
                 <h1>FlowCapture</h1>
             </div>
-            <button class="btn-icon">
-                <span class="material-icons-round">settings</span>
+            <button class="btn-icon"
+                    aria-label="Settings"
+                    title="Settings (coming soon)"
+                    disabled>
+                <span class="material-icons-round" aria-hidden="true">settings</span>
             </button>
         </header>
 
+        <!-- MAIN CONTENT -->
         <main>
             <!-- Background Glow FX -->
-            <div class="absolute"
-                style="top: -50px; right: -50px; width: 150px; height: 150px; background: rgba(59, 130, 246, 0.1); filter: blur(60px); border-radius: 50%; pointer-events: none;">
-            </div>
-            <div class="absolute"
-                style="bottom: 50px; left: -50px; width: 120px; height: 120px; background: rgba(99, 102, 241, 0.1); filter: blur(60px); border-radius: 50%; pointer-events: none;">
+            <div class="glow-1" aria-hidden="true"></div>
+            <div class="glow-2" aria-hidden="true"></div>
+
+            <!-- Toast Notification -->
+            <div class="toast-container">
+                <div id="toast" class="toast" role="alert" aria-live="assertive"></div>
             </div>
 
             <!-- IDLE VIEW -->
-            <div id="state-idle">
-                <div class="status-badge">
-                    <span class="status-dot"></span>
-                    <span class="status-text">Status: Idle</span>
+            <div id="state-idle" role="region" aria-label="Recording controls">
+                <div class="status-badge" role="status">
+                    <span class="status-dot" aria-hidden="true"></span>
+                    <span class="status-text">Status: Ready</span>
                 </div>
 
-                <div class="hero-text text-center space-y-3">
+                <div class="hero-text">
                     <h2>Ready to capture</h2>
                     <p>Start recording to track user interactions and session data on this active tab.</p>
                 </div>
 
-                <div class="w-full mt-2">
-                    <button id="start-btn" class="start-btn">
-                        <span class="material-icons-round">play_circle_filled</span>
+                <div style="width: 100%; margin-top: 0.5rem;">
+                    <button id="start-btn"
+                            class="start-btn"
+                            aria-label="Start recording user interactions on current tab"
+                            aria-pressed="false">
+                        <span class="material-icons-round" aria-hidden="true">play_circle_filled</span>
                         Start Recording
                     </button>
                 </div>
             </div>
 
             <!-- RECORDING VIEW -->
-            <div id="state-recording">
-                <div class="recording-badge">
-                    <div class="recording-dot"></div>
+            <div id="state-recording"
+                 role="region"
+                 aria-label="Recording in progress"
+                 aria-busy="false">
+
+                <div class="recording-badge" role="status" aria-label="Recording active">
+                    <div class="recording-dot" aria-hidden="true"></div>
                     <span>Recording Active</span>
                 </div>
 
-                <div class="flex flex-col items-center">
-                    <div id="timer" class="timer-display">00:00</div>
+                <div class="timer-section">
+                    <div id="timer"
+                         class="timer-display"
+                         role="timer"
+                         aria-label="Recording duration"
+                         aria-live="off">00:00</div>
                     <span class="timer-label">Session Duration</span>
                 </div>
 
-                <div class="stats-card">
-                    <div class="flex items-center">
-                        <div class="stats-icon-box">
+                <div class="stats-card" role="group" aria-label="Recording statistics">
+                    <div class="stats-left">
+                        <div class="stats-icon-box" aria-hidden="true">
                             <span class="material-icons-round">ads_click</span>
                         </div>
                         <div class="stats-info">
                             <span class="stats-label">Events Captured</span>
-                            <span id="event-count" class="stats-value">0</span>
+                            <span id="event-count"
+                                  class="stats-value"
+                                  aria-label="Number of events captured"
+                                  aria-live="polite"
+                                  aria-atomic="true">0</span>
                         </div>
                     </div>
                 </div>
 
-                <div class="w-full">
-                    <button id="camera-btn" class="stop-btn"
-                        style="border-color: #3b82f6; color: #3b82f6; margin-bottom: 0.75rem;">
-                        <span class="material-icons-round" style="font-size: 18px;">camera_alt</span>
+                <div class="action-buttons">
+                    <button id="camera-btn"
+                            class="checkpoint-btn"
+                            aria-label="Capture a checkpoint snapshot"
+                            disabled>
+                        <span class="material-icons-round" aria-hidden="true" style="font-size: 18px;">camera_alt</span>
                         Capture Checkpoint
                     </button>
 
-                    <button id="stop-btn" class="stop-btn">
-                        <div class="stop-icon"></div>
+                    <button id="stop-btn"
+                            class="stop-btn"
+                            aria-label="Stop recording">
+                        <div class="stop-icon" aria-hidden="true"></div>
                         Stop Recording
                     </button>
-                    <p
-                        style="text-align: center; font-size: 0.75rem; color: var(--text-muted); margin-top: 0.75rem; opacity: 0.7;">
+
+                    <p class="recording-note" aria-hidden="true">
                         Recording is saved locally
                     </p>
                 </div>
             </div>
         </main>
 
+        <!-- FOOTER -->
         <footer>
-            <a id="download-btn" class="download-link disabled">
-                <span class="material-icons-round">download</span>
+            <a id="download-btn"
+               class="download-link disabled"
+               role="button"
+               tabindex="0"
+               aria-label="Download recorded session data"
+               aria-disabled="true">
+                <span class="material-icons-round" aria-hidden="true">download</span>
                 <span>Download Result</span>
             </a>
         </footer>
     </div>
-    <script src="popup.js"></script>
+
+    <script type="module" src="popup.js"></script>
 </body>
 
 </html>

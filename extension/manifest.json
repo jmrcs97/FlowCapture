@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "FlowCapture Intent Recorder",
-    "version": "1.0",
-    "description": "Observes user interactions to generate structured automation intent.",
+    "version": "2.0",
+    "description": "Observes user interactions to generate structured automation intent with modular architecture.",
     "permissions": [
         "activeTab",
         "scripting",
@@ -22,6 +22,18 @@
             ],
             "js": [
                 "src/content/content.js"
+            ]
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "src/shared/*.js",
+                "src/content/core/*.js",
+                "src/content/ui/*.js"
+            ],
+            "matches": [
+                "<all_urls>"
             ]
         }
     ]
