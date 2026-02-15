@@ -18,13 +18,88 @@ export class PopupUI {
             startBtn: document.getElementById('start-btn'),
             stopBtn: document.getElementById('stop-btn'),
             downloadBtn: document.getElementById('download-btn'),
-            cameraBtn: document.getElementById('camera-btn'),
+            downloadBtnText: document.getElementById('download-btn-text'),
+            downloadDropdown: document.getElementById('download-dropdown'),
+            markCaptureBtn: document.getElementById('mark-capture-btn'),
             stateIdle: document.getElementById('state-idle'),
             stateRecording: document.getElementById('state-recording'),
+            stateSettings: document.getElementById('state-settings'),
             timerDisplay: document.getElementById('timer'),
             eventCountDisplay: document.getElementById('event-count'),
-            toast: document.getElementById('toast')
+            toast: document.getElementById('toast'),
+            settingsBtn: document.getElementById('settings-btn'),
+            settingsBackBtn: document.getElementById('settings-back-btn'),
+            shortcutBtn: document.getElementById('shortcut-btn'),
+            shortcutDisplay: document.getElementById('shortcut-display'),
+            exportFormatSelect: document.getElementById('export-format-select'),
+            autoMinimizeToggle: document.getElementById('auto-minimize-toggle'),
+            recordingIndicatorToggle: document.getElementById('recording-indicator-toggle'),
+            screenshotModeGroup: document.getElementById('screenshot-mode-group')
         };
+
+        this._setupDropdownBehavior();
+    }
+
+    /**
+     * Setup dropdown toggle behavior
+     * @private
+     */
+    _setupDropdownBehavior() {
+        if (!this.el.downloadBtn || !this.el.downloadDropdown) return;
+
+        // Toggle dropdown on main button click
+        this.el.downloadBtn.addEventListener('click', (e) => {
+            if (this.el.downloadBtn.classList.contains('disabled')) return;
+
+            e.stopPropagation();
+            this.toggleDropdown();
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!this.el.downloadBtn.contains(e.target) &&
+                !this.el.downloadDropdown.contains(e.target)) {
+                this.closeDropdown();
+            }
+        });
+
+        // Close on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.closeDropdown();
+            }
+        });
+    }
+
+    /**
+     * Toggle dropdown visibility
+     */
+    toggleDropdown() {
+        const isVisible = this.el.downloadDropdown.classList.contains('visible');
+
+        if (isVisible) {
+            this.closeDropdown();
+        } else {
+            this.openDropdown();
+        }
+    }
+
+    /**
+     * Open dropdown menu
+     */
+    openDropdown() {
+        this.el.downloadDropdown.classList.add('visible');
+        this.el.downloadDropdown.setAttribute('aria-hidden', 'false');
+        this.el.downloadBtn.setAttribute('aria-expanded', 'true');
+    }
+
+    /**
+     * Close dropdown menu
+     */
+    closeDropdown() {
+        this.el.downloadDropdown.classList.remove('visible');
+        this.el.downloadDropdown.setAttribute('aria-hidden', 'true');
+        this.el.downloadBtn.setAttribute('aria-expanded', 'false');
     }
 
     /**
@@ -39,8 +114,8 @@ export class PopupUI {
             this.el.startBtn.disabled = true;
             this.el.downloadBtn.classList.add('disabled');
 
-            if (this.el.cameraBtn) {
-                this.el.cameraBtn.disabled = false;
+            if (this.el.markCaptureBtn) {
+                this.el.markCaptureBtn.disabled = false;
             }
 
             // ACCESSIBILITY: Update ARIA states
@@ -51,8 +126,8 @@ export class PopupUI {
             this.el.stateRecording.style.display = 'none';
             this.el.startBtn.disabled = false;
 
-            if (this.el.cameraBtn) {
-                this.el.cameraBtn.disabled = true;
+            if (this.el.markCaptureBtn) {
+                this.el.markCaptureBtn.disabled = true;
             }
 
             // ACCESSIBILITY
@@ -90,13 +165,11 @@ export class PopupUI {
      * @param {number} count - Step count
      */
     enableDownload(count) {
-        if (!this.el.downloadBtn) return;
+        if (!this.el.downloadBtn || !this.el.downloadBtnText) return;
 
         this.el.downloadBtn.classList.remove('disabled');
-        this.el.downloadBtn.innerHTML = `
-            <span class="material-icons-round" aria-hidden="true">download</span>
-            <span>Download Intent (${count} steps)</span>
-        `;
+        this.el.downloadBtn.setAttribute('aria-disabled', 'false');
+        this.el.downloadBtnText.textContent = `Download (${count} steps)`;
         this.el.downloadBtn.setAttribute('aria-label', `Download ${count} recorded steps`);
     }
 
@@ -104,13 +177,12 @@ export class PopupUI {
      * Disable download button
      */
     disableDownload() {
-        if (!this.el.downloadBtn) return;
+        if (!this.el.downloadBtn || !this.el.downloadBtnText) return;
 
         this.el.downloadBtn.classList.add('disabled');
-        this.el.downloadBtn.innerHTML = `
-            <span class="material-icons-round" aria-hidden="true">download</span>
-            <span>Download Result</span>
-        `;
+        this.el.downloadBtn.setAttribute('aria-disabled', 'true');
+        this.el.downloadBtnText.textContent = 'Download Result';
+        this.closeDropdown();
     }
 
     /**
@@ -196,16 +268,167 @@ export class PopupUI {
     /**
      * @param {Function} handler
      */
-    onCheckpointClick(handler) {
-        if (this.el.cameraBtn) {
-            this.el.cameraBtn.addEventListener('click', handler);
+    onMarkCaptureClick(handler) {
+        if (this.el.markCaptureBtn) {
+            this.el.markCaptureBtn.addEventListener('click', handler);
         }
     }
 
     /**
-     * @param {Function} handler
+     * Register handler for download format selection
+     * @param {Function} handler - Called with format ('intent' or 'workflow')
      */
-    onDownloadClick(handler) {
-        this.el.downloadBtn.addEventListener('click', handler);
+    onDownloadFormatClick(handler) {
+        if (!this.el.downloadDropdown) return;
+
+        const items = this.el.downloadDropdown.querySelectorAll('.dropdown-item');
+        items.forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const format = item.getAttribute('data-format');
+                if (format) {
+                    handler(format);
+                    this.closeDropdown();
+                }
+            });
+        });
+    }
+
+    // ─── Settings View ───────────────────────────────────
+
+    /**
+     * Show settings view, hide other views
+     */
+    showSettings() {
+        this.el.stateIdle.style.display = 'none';
+        this.el.stateRecording.style.display = 'none';
+        this.el.stateSettings.style.display = 'flex';
+    }
+
+    /**
+     * Hide settings view, restore appropriate view
+     * @param {boolean} isRecording
+     * @param {number} eventCount
+     */
+    hideSettings(isRecording, eventCount = 0) {
+        this.el.stateSettings.style.display = 'none';
+        this.updateState(isRecording, eventCount);
+    }
+
+    /**
+     * @returns {boolean}
+     */
+    isSettingsVisible() {
+        return this.el.stateSettings.style.display !== 'none';
+    }
+
+    /**
+     * Populate settings UI with current values
+     * @param {Object} settings
+     */
+    populateSettings(settings) {
+        if (this.el.shortcutDisplay) {
+            this.el.shortcutDisplay.textContent = this._formatShortcut(settings.captureShortcut);
+        }
+        if (this.el.exportFormatSelect) {
+            this.el.exportFormatSelect.value = settings.defaultExportFormat;
+        }
+        if (this.el.autoMinimizeToggle) {
+            this.el.autoMinimizeToggle.checked = settings.autoMinimizeOverlay;
+        }
+        if (this.el.recordingIndicatorToggle) {
+            this.el.recordingIndicatorToggle.checked = settings.showRecordingIndicator;
+        }
+        if (this.el.screenshotModeGroup) {
+            const radio = this.el.screenshotModeGroup.querySelector(`input[value="${settings.screenshotMode}"]`);
+            if (radio) radio.checked = true;
+        }
+    }
+
+    /**
+     * Format shortcut object to display string
+     * @param {Object} shortcut - { ctrl, shift, alt, meta, key }
+     * @returns {string}
+     */
+    _formatShortcut(shortcut) {
+        if (!shortcut) return 'Ctrl+Shift+C';
+        const parts = [];
+        if (shortcut.ctrl) parts.push('Ctrl');
+        if (shortcut.shift) parts.push('Shift');
+        if (shortcut.alt) parts.push('Alt');
+        if (shortcut.meta) parts.push('Meta');
+        parts.push(shortcut.key.toUpperCase());
+        return parts.join('+');
+    }
+
+    /**
+     * Toggle shortcut recording mode
+     * @param {boolean} isRecording
+     */
+    setShortcutRecording(isRecording) {
+        if (!this.el.shortcutBtn) return;
+        if (isRecording) {
+            this.el.shortcutBtn.classList.add('recording');
+            this.el.shortcutDisplay.textContent = 'Press keys...';
+        } else {
+            this.el.shortcutBtn.classList.remove('recording');
+        }
+    }
+
+    /**
+     * Update shortcut display text
+     * @param {Object} shortcut
+     */
+    updateShortcutDisplay(shortcut) {
+        if (this.el.shortcutDisplay) {
+            this.el.shortcutDisplay.textContent = this._formatShortcut(shortcut);
+        }
+    }
+
+    // ─── Settings Event Registrations ────────────────────
+
+    /** @param {Function} handler */
+    onSettingsClick(handler) {
+        if (this.el.settingsBtn) this.el.settingsBtn.addEventListener('click', handler);
+    }
+
+    /** @param {Function} handler */
+    onSettingsBackClick(handler) {
+        if (this.el.settingsBackBtn) this.el.settingsBackBtn.addEventListener('click', handler);
+    }
+
+    /** @param {Function} handler */
+    onShortcutRecordClick(handler) {
+        if (this.el.shortcutBtn) this.el.shortcutBtn.addEventListener('click', handler);
+    }
+
+    /** @param {Function} handler */
+    onExportFormatChange(handler) {
+        if (this.el.exportFormatSelect) {
+            this.el.exportFormatSelect.addEventListener('change', (e) => handler(e.target.value));
+        }
+    }
+
+    /** @param {Function} handler */
+    onAutoMinimizeChange(handler) {
+        if (this.el.autoMinimizeToggle) {
+            this.el.autoMinimizeToggle.addEventListener('change', (e) => handler(e.target.checked));
+        }
+    }
+
+    /** @param {Function} handler */
+    onRecordingIndicatorChange(handler) {
+        if (this.el.recordingIndicatorToggle) {
+            this.el.recordingIndicatorToggle.addEventListener('change', (e) => handler(e.target.checked));
+        }
+    }
+
+    /** @param {Function} handler - Called with 'dynamic' | 'fullpage' | 'viewport' */
+    onScreenshotModeChange(handler) {
+        if (this.el.screenshotModeGroup) {
+            this.el.screenshotModeGroup.addEventListener('change', (e) => {
+                if (e.target.type === 'radio') handler(e.target.value);
+            });
+        }
     }
 }

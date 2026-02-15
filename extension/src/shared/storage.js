@@ -4,7 +4,7 @@
  * Eliminates callback hell and provides type safety
  */
 
-import { STORAGE_KEYS, ERROR_MESSAGES } from './constants.js';
+import { STORAGE_KEYS, ERROR_MESSAGES, DEFAULT_SETTINGS } from './constants.js';
 
 /**
  * Storage Manager - Async wrapper for chrome.storage.local
@@ -170,6 +170,32 @@ export class StorageManager {
      */
     static async saveRecordedSteps(steps) {
         return this.set({ [STORAGE_KEYS.RECORDED_STEPS]: steps });
+    }
+
+    /**
+     * Get settings with defaults applied
+     * @returns {Promise<Object>} Settings object
+     */
+    static async getSettings() {
+        try {
+            const result = await this.get(STORAGE_KEYS.SETTINGS);
+            const stored = result[STORAGE_KEYS.SETTINGS] || {};
+            return { ...DEFAULT_SETTINGS, ...stored };
+        } catch (error) {
+            console.error('Failed to get settings:', error);
+            return { ...DEFAULT_SETTINGS };
+        }
+    }
+
+    /**
+     * Save settings (merges with existing)
+     * @param {Object} settings - Partial or full settings object
+     * @returns {Promise<void>}
+     */
+    static async saveSettings(settings) {
+        const current = await this.getSettings();
+        const merged = { ...current, ...settings };
+        return this.set({ [STORAGE_KEYS.SETTINGS]: merged });
     }
 
     /**

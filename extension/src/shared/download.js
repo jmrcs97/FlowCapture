@@ -1,26 +1,21 @@
 /**
- * FlowCapture - Unified Download Manager
- * Eliminates 3 duplicate implementations:
- * - content.js:841-858
- * - popup.js:156-164
- * - content.js:586-595 (intent structure)
+ * FlowCapture - Download Manager
+ * Gera intent estruturado e exporta em JSON/CSV/Markdown.
  */
 
 import { CONFIG } from './constants.js';
+import { TraceInterpreter } from './trace-interpreter.js';
+import { WorkflowCompiler } from './workflow-compiler.js';
 
-/**
- * Download Manager - Handles file downloads and intent creation
- */
 export class DownloadManager {
-    /**
-     * Create intent object with standard structure
-     * @param {string} url - Current page URL
-     * @param {Array} steps - Array of recorded step objects
-     * @returns {Object} Structured intent object
-     */
     static createIntent(url, steps) {
+        const interpreter = new TraceInterpreter();
+        const semanticAnalysis = interpreter.interpret(steps || [], url); // Pass URL
+
         return {
             url,
+            semantic_analysis: semanticAnalysis,
+            workflow: semanticAnalysis.workflow_steps, // Direct reference to new format
             intent_analysis: {
                 summary: CONFIG.EXPORT.SUMMARY,
                 version: CONFIG.EXPORT.VERSION,
@@ -37,63 +32,49 @@ export class DownloadManager {
     }
 
     /**
-     * Calculate total duration from steps
-     * @param {Array} steps - Array of step objects
-     * @returns {number} Total duration in milliseconds
-     * @private
+     * Cria workflow IR compilado (formato screenshot-tool)
+     * @param {string} url - URL inicial
+     * @param {Array} capturedSteps - Steps capturados
+     * @returns {Array} Workflow no formato IR
      */
-    static _calculateTotalDuration(steps) {
-        if (!steps || steps.length === 0) return 0;
-
-        const firstStep = steps[0];
-        const lastStep = steps[steps.length - 1];
-
-        if (firstStep.trigger?.timestamp && lastStep.trigger?.timestamp) {
-            return lastStep.trigger.timestamp - firstStep.trigger.timestamp;
-        }
-
-        // Fallback: sum all step durations
-        return steps.reduce((total, step) => {
-            return total + (step.duration_ms || 0);
-        }, 0);
+    static createWorkflow(url, capturedSteps, options = {}) {
+        const compiler = new WorkflowCompiler(options);
+        const workflow = compiler.compile(url, capturedSteps);
+        return workflow;
     }
 
-    /**
-     * Download JSON data as file
-     * @param {Object} data - Data to download
-     * @param {string} filename - Output filename (default from CONFIG)
-     * @param {number} indent - JSON indentation (default from CONFIG)
-     * @returns {boolean} True if download initiated successfully
-     */
+    static _calculateTotalDuration(steps) {
+        if (!steps || steps.length === 0) return 0;
+        const first = steps[0];
+        const last = steps[steps.length - 1];
+        if (first.trigger?.timestamp && last.trigger?.timestamp) {
+            return last.trigger.timestamp - first.trigger.timestamp;
+        }
+        return steps.reduce((total, s) => total + (s.duration_ms || 0), 0);
+    }
+
     static downloadJSON(data, filename = null, indent = null) {
         try {
-            const finalFilename = filename || CONFIG.EXPORT.FILE_NAME;
-            const finalIndent = indent !== null ? indent : CONFIG.EXPORT.INDENT_SPACES;
+            const name = filename || CONFIG.EXPORT.FILE_NAME;
+            const spaces = indent !== null ? indent : CONFIG.EXPORT.INDENT_SPACES;
 
-            // Create JSON blob
-            const jsonString = JSON.stringify(data, null, finalIndent);
-            const blob = new Blob([jsonString], {
-                type: 'application/json;charset=utf-8'
-            });
+            const json = JSON.stringify(data, null, spaces);
+            const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
 
-            // Create download link
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = finalFilename;
+            a.download = name;
             a.style.display = 'none';
 
-            // Trigger download
             document.body.appendChild(a);
             a.click();
 
-            // Cleanup
             setTimeout(() => {
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
             }, 100);
 
-            console.log(`Downloaded: ${finalFilename} (${this._formatBytes(blob.size)})`);
             return true;
         } catch (error) {
             console.error('Download failed:', error);
@@ -101,69 +82,34 @@ export class DownloadManager {
         }
     }
 
-    /**
-     * Download current flow from window global
-     * Convenience method for content script
-     * @param {string} filename - Optional custom filename
-     * @returns {Promise<boolean>} True if successful
-     */
     static async downloadCurrentFlow(filename = null) {
         try {
-            // Access global flowCapture instance
             const recordedSteps = window.flowCapture?.recordedSteps || [];
-
-            if (recordedSteps.length === 0) {
-                console.warn('No recorded steps to download');
-                return false;
-            }
+            if (recordedSteps.length === 0) return false;
 
             const intent = this.createIntent(window.location.href, recordedSteps);
-
-            // Generate filename with timestamp if not provided
-            const finalFilename = filename || this._generateFilename();
-
-            return this.downloadJSON(intent, finalFilename);
+            return this.downloadJSON(intent, filename || this._generateFilename());
         } catch (error) {
             console.error('Failed to download current flow:', error);
             return false;
         }
     }
 
-    /**
-     * Generate filename with timestamp
-     * @returns {string} Generated filename
-     * @private
-     */
     static _generateFilename() {
         const now = new Date();
-        const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
-        const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-'); // HH-MM-SS
-        return `flow_capture_${dateStr}_${timeStr}.json`;
+        const date = now.toISOString().split('T')[0];
+        const time = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+        return `flow_capture_${date}_${time}.json`;
     }
 
-    /**
-     * Format bytes to human-readable string
-     * @param {number} bytes - Byte count
-     * @returns {string} Formatted string (e.g., "2.5 KB")
-     * @private
-     */
     static _formatBytes(bytes) {
         if (bytes === 0) return '0 Bytes';
-
         const k = 1024;
         const sizes = ['Bytes', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
-
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
-    /**
-     * Download text content as file
-     * @param {string} text - Text content
-     * @param {string} filename - Output filename
-     * @param {string} mimeType - MIME type (default: text/plain)
-     * @returns {boolean} True if successful
-     */
     static downloadText(text, filename, mimeType = 'text/plain;charset=utf-8') {
         try {
             const blob = new Blob([text], { type: mimeType });
@@ -189,32 +135,35 @@ export class DownloadManager {
     }
 
     /**
-     * Download steps as CSV format
-     * @param {Array} steps - Array of step objects
-     * @param {string} filename - Output filename
-     * @returns {boolean} True if successful
+     * CSV com a nova estrutura: visual_settling ao invés de visual_changes array
      */
     static downloadStepsAsCSV(steps, filename = 'flow_capture.csv') {
         try {
-            // CSV header
-            const headers = ['Step ID', 'Type', 'Selector', 'Value', 'Duration (ms)', 'Visual Changes'];
+            const headers = [
+                'Step ID', 'Type', 'Selector', 'Value',
+                'Duration (ms)', 'Max Layout Shift', 'Stabilized',
+                'New Elements', 'Class Toggles'
+            ];
 
-            // Convert steps to CSV rows
             const rows = steps.map(step => {
                 const trigger = step.trigger || {};
+                const settling = step.visual_settling || {};
+                const effects = step.effects || {};
+
                 return [
                     step.step_id || '',
                     trigger.type || '',
                     trigger.selector || '',
                     trigger.value || '',
                     step.duration_ms || 0,
-                    (step.visual_changes || []).length
+                    settling.max_layout_shift || 0,
+                    settling.stabilized ? 'yes' : 'no',
+                    effects.new_elements?.length || 0,
+                    effects.class_toggles?.length || 0
                 ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(',');
             });
 
-            // Combine header and rows
             const csv = [headers.join(','), ...rows].join('\n');
-
             return this.downloadText(csv, filename, 'text/csv;charset=utf-8');
         } catch (error) {
             console.error('CSV download failed:', error);
@@ -223,10 +172,7 @@ export class DownloadManager {
     }
 
     /**
-     * Download steps as Markdown format
-     * @param {Array} steps - Array of step objects
-     * @param {string} filename - Output filename
-     * @returns {boolean} True if successful
+     * Markdown com visual_settling e effects
      */
     static downloadStepsAsMarkdown(steps, filename = 'flow_capture.md') {
         try {
@@ -243,6 +189,9 @@ export class DownloadManager {
 
             steps.forEach((step, index) => {
                 const trigger = step.trigger || {};
+                const settling = step.visual_settling || {};
+                const effects = step.effects || {};
+
                 lines.push(`### ${index + 1}. ${trigger.type || 'Unknown'}`);
                 lines.push('');
                 lines.push(`- **Selector:** \`${trigger.selector || 'N/A'}\``);
@@ -252,37 +201,43 @@ export class DownloadManager {
                 }
 
                 lines.push(`- **Duration:** ${step.duration_ms || 0}ms`);
-                lines.push(`- **Visual Changes:** ${(step.visual_changes || []).length}`);
 
-                if (step.visual_changes && step.visual_changes.length > 0) {
+                if (settling.max_layout_shift > 0) {
+                    lines.push(`- **Layout Shift:** ${settling.max_layout_shift}px (settled frame ${settling.settle_frame})`);
+                    lines.push(`- **Stabilized:** ${settling.stabilized ? 'Yes' : 'No (timeout)'}`);
+                }
+
+                if (effects.new_elements?.length > 0) {
                     lines.push('');
-                    lines.push('**Changes:**');
-                    step.visual_changes.forEach(change => {
-                        lines.push(`- \`${change.selector}\`: ${change.property} (${change.before} → ${change.after})`);
+                    lines.push('**New Elements:**');
+                    effects.new_elements.forEach(el => {
+                        lines.push(`- \`${el.selector}\` (${el.rect.width}x${el.rect.height})`);
+                    });
+                }
+
+                if (effects.class_toggles?.length > 0) {
+                    lines.push('');
+                    lines.push('**Class Toggles:**');
+                    effects.class_toggles.forEach(t => {
+                        if (t.added?.length) lines.push(`- \`${t.selector}\` +${t.added.join(', +')}`);
+                        if (t.removed?.length) lines.push(`- \`${t.selector}\` -${t.removed.join(', -')}`);
                     });
                 }
 
                 lines.push('');
             });
 
-            const markdown = lines.join('\n');
-            return this.downloadText(markdown, filename, 'text/markdown;charset=utf-8');
+            return this.downloadText(lines.join('\n'), filename, 'text/markdown;charset=utf-8');
         } catch (error) {
             console.error('Markdown download failed:', error);
             return false;
         }
     }
 
-    /**
-     * Copy intent data to clipboard
-     * @param {Object} intentData - Intent object to copy
-     * @returns {Promise<boolean>} True if successful
-     */
     static async copyToClipboard(intentData) {
         try {
-            const jsonString = JSON.stringify(intentData, null, CONFIG.EXPORT.INDENT_SPACES);
-            await navigator.clipboard.writeText(jsonString);
-            console.log('Intent data copied to clipboard');
+            const json = JSON.stringify(intentData, null, CONFIG.EXPORT.INDENT_SPACES);
+            await navigator.clipboard.writeText(json);
             return true;
         } catch (error) {
             console.error('Failed to copy to clipboard:', error);
@@ -290,55 +245,15 @@ export class DownloadManager {
         }
     }
 
-    /**
-     * Validate intent data structure
-     * @param {Object} intent - Intent object to validate
-     * @returns {Object} Validation result with isValid and errors
-     */
-    static validateIntent(intent) {
-        const errors = [];
-
-        if (!intent) {
-            errors.push('Intent is null or undefined');
-            return { isValid: false, errors };
-        }
-
-        if (!intent.url) {
-            errors.push('Missing URL');
-        }
-
-        if (!intent.intent_analysis) {
-            errors.push('Missing intent_analysis object');
-            return { isValid: false, errors };
-        }
-
-        if (!Array.isArray(intent.intent_analysis.steps)) {
-            errors.push('steps must be an array');
-        } else if (intent.intent_analysis.steps.length === 0) {
-            errors.push('steps array is empty');
-        }
-
-        return {
-            isValid: errors.length === 0,
-            errors
-        };
-    }
-
-    /**
-     * Get download statistics
-     * @param {Object} intentData - Intent object
-     * @returns {Object} Statistics about the data
-     */
     static getDownloadStats(intentData) {
-        const jsonString = JSON.stringify(intentData, null, CONFIG.EXPORT.INDENT_SPACES);
-        const bytes = new Blob([jsonString]).size;
+        const json = JSON.stringify(intentData, null, CONFIG.EXPORT.INDENT_SPACES);
+        const bytes = new Blob([json]).size;
 
         return {
             stepCount: intentData.intent_analysis?.steps?.length || 0,
             fileSize: this._formatBytes(bytes),
             fileSizeBytes: bytes,
-            duration: this._calculateTotalDuration(intentData.intent_analysis?.steps || []),
-            estimatedDownloadTime: bytes < 100000 ? 'Instant' : '< 1s'
+            duration: this._calculateTotalDuration(intentData.intent_analysis?.steps || [])
         };
     }
 }

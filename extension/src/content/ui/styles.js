@@ -188,6 +188,17 @@ export class OverlayStyles {
             }
             .btn-secondary:active { transform: scale(0.98); }
 
+            .btn-capture {
+                background: rgba(168, 85, 247, 0.15);
+                color: #a855f7;
+                border: 1px solid rgba(168, 85, 247, 0.3);
+            }
+            .btn-capture:hover {
+                background: rgba(168, 85, 247, 0.25);
+                border-color: rgba(168, 85, 247, 0.5);
+            }
+            .btn-capture:active { transform: scale(0.98); }
+
             .btn-success {
                 background: rgba(34, 197, 94, 0.15);
                 color: #22c55e;

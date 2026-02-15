@@ -15,7 +15,7 @@ import { Timer } from '../../shared/timer.js';
 import { DownloadManager } from '../../shared/download.js';
 import { StorageManager } from '../../shared/storage.js';
 import { OverlayStyles } from './styles.js';
-import { CONFIG, MESSAGE_ACTIONS } from '../../shared/constants.js';
+import { CONFIG } from '../../shared/constants.js';
 
 /**
  * Overlay UI Widget - Injected into the page via Shadow DOM
@@ -30,6 +30,7 @@ export class OverlayUI {
         this.timer = new Timer((formatted) => this._updateTimerDisplay(formatted));
         this.isVisible = false;
         this._isRecording = false;
+        this._autoMinimize = true;
 
         // Create Shadow DOM container
         this.container = document.createElement('div');
@@ -107,10 +108,11 @@ export class OverlayUI {
                             <span class="stat-label">Steps</span>
                         </div>
                     </div>
-                    <button class="btn-secondary"
-                            id="btn-checkpoint"
-                            aria-label="Capture checkpoint snapshot">
-                        Snapshot
+                    <button class="btn-capture"
+                            id="btn-mark-capture"
+                            aria-label="Mark screenshot capture point (Ctrl+Shift+C)"
+                            title="Ctrl+Shift+C">
+                        📸 Mark Capture
                     </button>
                     <button class="btn-danger"
                             id="btn-stop"
@@ -139,15 +141,16 @@ export class OverlayUI {
             this.hide();
         };
 
-        // Start recording
+        // Start recording (direct call - chrome.runtime.sendMessage doesn't reach own content script)
         w.querySelector('#btn-start').onclick = async () => {
             const btn = w.querySelector('#btn-start');
             btn.classList.add('loading');
             btn.textContent = 'Starting...';
 
             try {
-                // Notify content script to start recording
-                chrome.runtime.sendMessage({ action: MESSAGE_ACTIONS.START_RECORDING });
+                if (window.flowCapture) {
+                    await window.flowCapture.startRecording();
+                }
             } catch (error) {
                 console.error('Failed to start recording from overlay:', error);
                 btn.classList.remove('loading');
@@ -156,14 +159,16 @@ export class OverlayUI {
             }
         };
 
-        // Stop recording
+        // Stop recording (direct call)
         w.querySelector('#btn-stop').onclick = async () => {
             const btn = w.querySelector('#btn-stop');
             btn.classList.add('loading');
             btn.textContent = 'Stopping...';
 
             try {
-                chrome.runtime.sendMessage({ action: MESSAGE_ACTIONS.STOP_RECORDING });
+                if (window.flowCapture) {
+                    await window.flowCapture.stopRecording();
+                }
             } catch (error) {
                 console.error('Failed to stop recording from overlay:', error);
                 btn.classList.remove('loading');
@@ -172,9 +177,15 @@ export class OverlayUI {
             }
         };
 
-        // Checkpoint
-        w.querySelector('#btn-checkpoint').onclick = () => {
-            this.showToast('Snapshot captured!', 'success');
+        // Mark Capture (screenshot placeholder)
+        w.querySelector('#btn-mark-capture').onclick = () => {
+            // Dispatch to FlowCapture content script
+            if (window.flowCapture && window.flowCapture._triggerMarkCapture) {
+                window.flowCapture._triggerMarkCapture();
+            } else if (window.markCapture) {
+                window.markCapture();
+            }
+            this.showToast('📸 Capture marked!', 'success');
         };
 
         // Hover to expand/minimize
@@ -185,7 +196,7 @@ export class OverlayUI {
         });
 
         w.addEventListener('mouseleave', () => {
-            if (this._isRecording) {
+            if (this._isRecording && this._autoMinimize) {
                 this.widget.classList.add('minimized');
             }
         });
@@ -375,6 +386,37 @@ export class OverlayUI {
             }
         } catch (error) {
             console.error('OverlayUI: Failed to restore state:', error);
+        }
+    }
+
+    /**
+     * Set auto-minimize behavior
+     * @param {boolean} enabled
+     */
+    setAutoMinimize(enabled) {
+        this._autoMinimize = enabled;
+    }
+
+    /**
+     * Show/hide the recording dot in minimized mode
+     * @param {boolean} visible
+     */
+    setRecordingIndicatorVisible(visible) {
+        const miniUI = this.shadow.querySelector('.mini-ui');
+        if (miniUI) {
+            miniUI.style.display = visible ? '' : 'none';
+        }
+    }
+
+    /**
+     * Update the shortcut display on the Mark Capture button
+     * @param {string} shortcutText - e.g. "Ctrl+Shift+C"
+     */
+    updateShortcutDisplay(shortcutText) {
+        const btn = this.shadow.querySelector('#btn-mark-capture');
+        if (btn) {
+            btn.setAttribute('title', shortcutText);
+            btn.setAttribute('aria-label', `Mark screenshot capture point (${shortcutText})`);
         }
     }
 

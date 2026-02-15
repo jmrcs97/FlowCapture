@@ -1,115 +1,83 @@
 /**
- * FlowCapture - Centralized Configuration
- * All magic numbers and configuration values in one place
+ * FlowCapture - Configuração centralizada
  */
 
 export const CONFIG = {
-    // Visual change detection thresholds
-    VISUAL_THRESHOLDS: {
-        HEIGHT: 5,           // Minimum height change in pixels
-        WIDTH: 5,            // Minimum width change in pixels
-        OPACITY: 0.01,       // Minimum opacity change
-        POSITION: 1          // Minimum position change in pixels
-    },
-
-    // Layout stabilization settings
+    // Estabilização de layout
     STABILIZATION: {
-        MIN_STABLE_FRAMES: 15,      // Consecutive stable frames required
-        MIN_WAIT_MS: 500,            // Minimum wait time before declaring stable
-        MAX_TIMEOUT_MS: 3000,        // Maximum time to wait for stabilization
-        RAF_INTERVAL_MS: 16          // RequestAnimationFrame interval (~60fps)
+        LAYOUT_DELTA: 0.5,          // px — delta abaixo disso = frame estável
+        MIN_STABLE_FRAMES: 15,      // frames consecutivos estáveis pra declarar estável
+        MIN_WAIT_MS: 500,           // tempo mínimo antes de declarar estável
+        MAX_TIMEOUT_MS: 3000        // timeout máximo de estabilização
     },
 
-    // Output limits to keep JSON concise
+    // Limites de output
     LIMITS: {
-        MAX_VISUAL_CHANGES: 15,      // Max visual changes per step
-        MAX_CLASS_CHANGES: 5,        // Max class attribute changes per step
-        MAX_MUTATION_BATCH: 100      // Max mutations to process per RAF
+        MAX_CLASS_CHANGES: 5,
+        MAX_MUTATION_BATCH: 100
     },
 
-    // Event handling timers
+    // Timers de eventos
     TIMERS: {
-        SCROLL_DEBOUNCE_MS: 150,     // Scroll event debounce delay
-        STORAGE_UPDATE_DEBOUNCE: 100 // Storage update debounce
+        SCROLL_DEBOUNCE_MS: 150,
+        STORAGE_UPDATE_DEBOUNCE: 100
     },
 
-    // Accessibility settings
+    // Acessibilidade
     ACCESSIBILITY: {
         OVERLAY_ARIA_LABEL: 'FlowCapture Recording Overlay',
-        MIN_CONTRAST_RATIO: 4.5      // WCAG AA requirement
+        MIN_CONTRAST_RATIO: 4.5
     },
 
-    // UI settings
+    // UI
     UI: {
-        OVERLAY_Z_INDEX: 2147483647,  // Maximum z-index
+        OVERLAY_Z_INDEX: 2147483647,
         POPUP_WIDTH: 360,
         POPUP_HEIGHT: 520,
-        TIMER_UPDATE_INTERVAL: 1000   // Update timer every 1 second
+        TIMER_UPDATE_INTERVAL: 1000
     },
 
-    // Selector generation
+    // Geração de seletores
     SELECTOR: {
-        // Utility class patterns to filter out
-        UTILITY_CLASS_PATTERN: /^(d-|flex-|align-|justify-|m[tbrl]?-|p[tbrl]?-|w-|h-|text-|bg-|border-|gap-|show|active|visible)/,
-        MAX_SELECTOR_LENGTH: 100      // Maximum selector string length
+        // Fixed: removed 'show', 'active', 'visible' - these are semantic, not utility classes
+        UTILITY_CLASS_PATTERN: /^(d-|flex-|align-|justify-|m[tbrl]?-|p[tbrl]?-|w-|h-|text-|bg-|border-|gap-)/,
+        MAX_SELECTOR_LENGTH: 100
     },
 
-    // MutationObserver configuration
+    // MutationObserver
     MUTATION_OBSERVER: {
         OBSERVE_ATTRIBUTES: ['class', 'style', 'data-state'],
         OBSERVE_CHARACTER_DATA: false,
-        THROTTLE_RAF: true            // Use RAF for batching
+        THROTTLE_RAF: true
     },
 
-    // Performance monitoring
+    // Performance
     PERFORMANCE: {
-        ENABLE_CACHE: true,           // Enable selector caching
-        CACHE_TYPE: 'WeakMap',        // Use WeakMap for auto GC
-        LOG_PERFORMANCE: false        // Enable performance logging
+        ENABLE_CACHE: true,
+        CACHE_TYPE: 'WeakMap',
+        LOG_PERFORMANCE: false
     },
 
-    // Data export
+    // Export
     EXPORT: {
-        VERSION: '2.0-diff-engine',
-        SUMMARY: 'Deterministic UI Mutation Log',
-        FILE_NAME: 'flow_capture.json',
+        VERSION: '4.0-workflow-engine',
+        SUMMARY: 'Executable Workflow Steps',
+        FILE_NAME: 'workflow.json',
         INDENT_SPACES: 2
     }
 };
 
-/**
- * Message action types for Chrome extension messaging
- */
 export const MESSAGE_ACTIONS = {
     TOGGLE_OVERLAY: 'toggleOverlay',
     START_RECORDING: 'startRecording',
     STOP_RECORDING: 'stopRecording',
     CAPTURE_STATE: 'captureState',
+    MARK_CAPTURE: 'markCapture',
     GET_INTENT: 'getIntent',
     INTENT_UPDATED: 'intentUpdated',
     LOG: 'log'
 };
 
-/**
- * Visual property priorities for sorting changes
- */
-export const VISUAL_PROPERTY_PRIORITY = {
-    height: 3,
-    width: 3,
-    opacity: 2,
-    display: 2,
-    visibility: 2,
-    transform: 1,
-    position: 1,
-    top: 1,
-    left: 1,
-    right: 1,
-    bottom: 1
-};
-
-/**
- * Error messages
- */
 export const ERROR_MESSAGES = {
     NO_ACTIVE_TAB: 'No active tab found',
     CONNECTION_FAILED: 'Could not establish connection. Please refresh the page.',
@@ -120,9 +88,6 @@ export const ERROR_MESSAGES = {
     STORAGE_ERROR: 'Failed to access browser storage'
 };
 
-/**
- * Success messages
- */
 export const SUCCESS_MESSAGES = {
     RECORDING_STARTED: 'Recording started successfully',
     RECORDING_STOPPED: 'Recording stopped',
@@ -130,13 +95,19 @@ export const SUCCESS_MESSAGES = {
     DOWNLOAD_COMPLETE: 'Flow downloaded successfully'
 };
 
-/**
- * Storage keys for chrome.storage.local
- */
 export const STORAGE_KEYS = {
     IS_RECORDING: 'isRecording',
     START_TIME: 'startTime',
     EVENT_COUNT: 'eventCount',
     INTENT_DATA: 'intentData',
-    RECORDED_STEPS: 'recordedSteps'
+    RECORDED_STEPS: 'recordedSteps',
+    SETTINGS: 'fcSettings'
+};
+
+export const DEFAULT_SETTINGS = {
+    captureShortcut: { ctrl: true, shift: true, key: 'C' },
+    defaultExportFormat: 'workflow',
+    autoMinimizeOverlay: true,
+    showRecordingIndicator: true,
+    screenshotMode: 'dynamic' // 'dynamic' | 'fullpage' | 'viewport'
 };

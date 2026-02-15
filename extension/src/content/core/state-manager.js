@@ -34,9 +34,8 @@ export class StateManager {
             this.isRecording = stored.isRecording;
             this.startTime = stored.startTime;
 
-            // Note: steps are not stored in storage (too large)
-            // They are lost on page reload - this is by design
-            this.recordedSteps = [];
+            // Restaura passos do storage para sobrevivência ao reload
+            this.recordedSteps = stored.recordedSteps || [];
 
             this._notifyListeners('initialized', this.getState());
 
@@ -57,6 +56,7 @@ export class StateManager {
         this.startTime = Date.now();
 
         await StorageManager.setRecordingState(true, this.startTime, 0);
+        await StorageManager.saveRecordedSteps([]); // Limpa storage ao iniciar
 
         this._notifyListeners('recordingStarted', this.getState());
     }
@@ -69,6 +69,7 @@ export class StateManager {
         this.isRecording = false;
         const count = this.recordedSteps.length;
 
+        // Mantém os steps no storage caso o popup queira baixar depois
         await StorageManager.setRecordingState(false, null, count);
 
         this._notifyListeners('recordingStopped', this.getState());
@@ -84,6 +85,11 @@ export class StateManager {
     addStep(step) {
         this.recordedSteps.push(step);
         const count = this.recordedSteps.length;
+
+        // Persistência robusta: salva passos em background
+        StorageManager.saveRecordedSteps(this.recordedSteps).catch(err => {
+            console.warn('StateManager: Failed to save steps to storage:', err);
+        });
 
         // Non-blocking storage update (debounced)
         StorageManager.updateEventCount(count).catch(err => {

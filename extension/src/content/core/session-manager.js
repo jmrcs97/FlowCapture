@@ -1,38 +1,37 @@
 /**
  * FlowCapture - Session Manager
- * Extracted from content.js:206-423
- * IMPROVEMENTS:
- * - Dependency injection (selectorEngine via constructor)
- * - Memory leak fix (cleanup on finalize)
- * - Config-driven limits
- * - Separated SessionManager (orchestration) from InteractionSession (data)
+ *
+ * Gerencia o ciclo de vida de cada interação.
+ * Uma InteractionSession captura: trigger → mutações → estabilização visual → step.
+ *
+ * Output de cada step:
+ * {
+ *   step_id, trigger, effects, visual_settling, duration_ms
+ * }
+ *
+ * effects contém class_toggles, body_class_changes, new_elements, visual_shift_detected.
+ * visual_settling vem direto do LayoutStabilizer (frames_observed, max_layout_shift, etc).
+ * Não rastreamos QUAIS propriedades mudaram — só QUANDO parou.
  */
 
-import { CONFIG, VISUAL_PROPERTY_PRIORITY } from '../../shared/constants.js';
+import { CONFIG } from '../../shared/constants.js';
 import { LayoutStabilizer } from './layout-stabilizer.js';
 
-/**
- * Session Manager - Orchestrates recording sessions
- * Manages lifecycle of InteractionSession instances
- */
 export class SessionManager {
-    /**
-     * @param {SelectorEngine} selectorEngine - Selector generator
-     * @param {Function} onSessionComplete - Callback when session produces a step
-     */
     constructor(selectorEngine, onSessionComplete) {
         this.selectorEngine = selectorEngine;
         this.onSessionComplete = onSessionComplete;
         this.currentSession = null;
+        this.lastEvent = null; // For deduplication
     }
 
-    /**
-     * Start a new interaction session
-     * Finalizes any existing session before creating a new one
-     * @param {Object} triggerEvent - Event that triggered the session
-     */
     startSession(triggerEvent) {
-        // Finalize previous session if still stabilizing (e.g. fast clicks)
+        // Deduplication check
+        if (this._isDuplicate(triggerEvent)) {
+            console.log('SessionManager: Duplicate event ignored', triggerEvent.type);
+            return null;
+        }
+
         if (this.currentSession && !this.currentSession.isFinalized) {
             this.currentSession.finalize();
         }
@@ -41,32 +40,61 @@ export class SessionManager {
             triggerEvent,
             this.selectorEngine,
             (stepData) => {
-                if (this.onSessionComplete) {
-                    this.onSessionComplete(stepData);
-                }
-                // Clear reference if this is still the current session
-                if (this.currentSession && this.currentSession.id === stepData.step_id) {
+                if (this.onSessionComplete) this.onSessionComplete(stepData);
+                if (this.currentSession?.id === stepData.step_id) {
                     this.currentSession = null;
                 }
             }
         );
 
+        // Track last event for deduplication
+        this.lastEvent = {
+            target: triggerEvent.target,
+            type: triggerEvent.type,
+            timestamp: Date.now()
+        };
+
         return this.currentSession;
     }
 
     /**
-     * Add mutation to current session
-     * @param {MutationRecord} mutation - DOM mutation record
+     * Check if event is duplicate and should be ignored
+     * @param {Object} triggerEvent - Event to check
+     * @returns {boolean} True if duplicate
+     * @private
      */
+    _isDuplicate(triggerEvent) {
+        if (!this.lastEvent) return false;
+
+        const timeDelta = Date.now() - this.lastEvent.timestamp;
+        const isSameTarget = this.lastEvent.target === triggerEvent.target;
+        const isSameType = this.lastEvent.type === triggerEvent.type;
+
+        // Same target + type within 500ms = duplicate
+        if (isSameTarget && isSameType && timeDelta < 500) {
+            return true;
+        }
+
+        // input + change on same target within 1s = duplicate
+        const isInputChange =
+            (this.lastEvent.type === 'input' && triggerEvent.type === 'change') ||
+            (this.lastEvent.type === 'change' && triggerEvent.type === 'input') ||
+            (this.lastEvent.type === 'input' && triggerEvent.type === 'input_change') ||
+            (this.lastEvent.type === 'input_change' && triggerEvent.type === 'input');
+
+        if (isSameTarget && isInputChange && timeDelta < 1000) {
+            return true;
+        }
+
+        return false;
+    }
+
     addMutation(mutation) {
         if (this.currentSession && !this.currentSession.isFinalized) {
             this.currentSession.addMutation(mutation);
         }
     }
 
-    /**
-     * Finalize current session (e.g. on stop recording)
-     */
     finalizeCurrentSession() {
         if (this.currentSession && !this.currentSession.isFinalized) {
             this.currentSession.finalize();
@@ -74,125 +102,140 @@ export class SessionManager {
         }
     }
 
-    /**
-     * Check if there's an active session
-     * @returns {boolean}
-     */
     hasActiveSession() {
         return this.currentSession !== null && !this.currentSession.isFinalized;
-    }
-
-    /**
-     * Get current session ID
-     * @returns {string|null}
-     */
-    getCurrentSessionId() {
-        return this.currentSession?.id || null;
     }
 }
 
 /**
- * Interaction Session - Captures a single user interaction and its effects
- * Monitors DOM changes until layout stabilizes, then produces a step diff
+ * Uma única interação: trigger + observação de efeitos + estabilização
  */
 class InteractionSession {
-    /**
-     * @param {Object} triggerEvent - Event trigger data
-     * @param {SelectorEngine} selectorEngine - Selector generator
-     * @param {Function} onComplete - Callback with step data
-     */
     constructor(triggerEvent, selectorEngine, onComplete) {
         this.id = Math.random().toString(36).substr(2, 9);
         this.selectorEngine = selectorEngine;
         this.onComplete = onComplete;
         this.isFinalized = false;
 
-        // Build trigger data
         this.trigger = this._buildTrigger(triggerEvent);
-
-        // Capture pre-state
-        this.beforeState = this._createDOMSnapshot();
-
-        // Collected mutations
+        this.beforeBodyClasses = document.body.className;
         this.mutations = [];
 
-        // Init visual stabilizer with dependency injection
-        this.layoutStabilizer = new LayoutStabilizer(selectorEngine);
+        this.layoutStabilizer = new LayoutStabilizer();
+        this._initCandidates(triggerEvent.target);
 
-        // Add trigger target as candidate
-        this._initStabilizerCandidates(triggerEvent.target);
-
-        // Start stabilization loop
         this.layoutStabilizer.start((visualReport) => {
             this.finalize(visualReport);
         });
     }
 
-    /**
-     * Build trigger data from event
-     * @param {Object} triggerEvent
-     * @returns {Object} Trigger metadata
-     * @private
-     */
     _buildTrigger(triggerEvent) {
+        const target = triggerEvent.target;
+
+        // Get primary + fallback selectors for robustness
+        const candidates = this.selectorEngine.getMultipleCandidates(target);
+
         const trigger = {
             type: triggerEvent.type,
-            selector: this.selectorEngine.getUniqueSelector(triggerEvent.target),
-            timestamp: Date.now()
+            selector: candidates.primary || this.selectorEngine.getUniqueSelector(target),
+            selectorFallbacks: candidates.fallbacks || [],
+            selectorStrategies: candidates.strategies || [],
+            timestamp: Date.now(),
+            metadata: this._extractMetadata(target),
+            viewport: {
+                width: window.innerWidth,
+                height: window.innerHeight,
+                devicePixelRatio: window.devicePixelRatio || 1
+            }
         };
 
-        // Add type-specific data
-        if (triggerEvent.type === 'input_change') {
+        // Event-specific data
+        if (triggerEvent.coordinates) trigger.coordinates = triggerEvent.coordinates;
+        if (triggerEvent.modifiers) trigger.modifiers = triggerEvent.modifiers;
+        if (triggerEvent.button !== undefined) trigger.button = triggerEvent.button;
+        if (triggerEvent.key) trigger.key = triggerEvent.key;
+
+        if (triggerEvent.type === 'input_change' || triggerEvent.type === 'input') {
             trigger.value = triggerEvent.value;
-        } else if (triggerEvent.type === 'scroll') {
-            trigger.scroll = triggerEvent.scrollData;
+        }
+        if (triggerEvent.type === 'scroll') trigger.scroll = triggerEvent.scrollData;
+
+        // Custom events from style-capture helpers
+        if (triggerEvent.type === 'style_change') {
+            trigger.styleChange = triggerEvent.styleChanges;
+        }
+        if (triggerEvent.type === 'expand') {
+            trigger.expandParams = triggerEvent.expandParams;
+        }
+        if (triggerEvent.type === 'style_changes_batch') {
+            trigger.styleChangesBatch = triggerEvent.styleChanges;
+        }
+        if (triggerEvent.type === 'capture_point') {
+            trigger.captureLabel = triggerEvent.captureLabel;
         }
 
         return trigger;
     }
 
-    /**
-     * Initialize stabilizer with target and parent
-     * @param {Element} target - Event target
-     * @private
-     */
-    _initStabilizerCandidates(target) {
+    _extractMetadata(el) {
+        if (!el || el.nodeType !== 1) return {};
+
+        const meta = {
+            tagName: el.tagName.toLowerCase(),
+            role: el.getAttribute('role') || el.tagName.toLowerCase()
+        };
+
+        // Text content (increased limit to 100 chars)
+        let text = '';
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+            text = el.value || el.placeholder || '';
+        } else {
+            text = el.innerText || el.textContent || '';
+        }
+        meta.text = text.trim().substring(0, 100);
+
+        // ARIA labels
+        const ariaLabel = el.getAttribute('aria-label')
+            || el.getAttribute('aria-labelledby')
+            || el.title
+            || el.name;
+        if (ariaLabel) meta.ariaLabel = ariaLabel.trim();
+
+        // Common attributes
+        if (el.placeholder) meta.placeholder = el.placeholder;
+        if (el.getAttribute('data-testid')) meta.testId = el.getAttribute('data-testid');
+
+        // Link/image/form attributes
+        if (el.href) meta.href = el.href;
+        if (el.src) meta.src = el.src;
+        if (el.type) meta.inputType = el.type;
+        if (el.name) meta.name = el.name;
+
+        return meta;
+    }
+
+    _initCandidates(target) {
         if (!target) return;
-
         this.layoutStabilizer.addCandidate(target);
-
-        // Also add parent - container often changes size
         if (target.parentElement) {
             this.layoutStabilizer.addCandidate(target.parentElement);
         }
     }
 
     /**
-     * Create lightweight DOM snapshot
-     * @returns {Object} Snapshot
-     * @private
-     */
-    _createDOMSnapshot() {
-        return {
-            bodyClasses: document.body.className,
-            timestamp: Date.now()
-        };
-    }
-
-    /**
-     * Add mutation record to session and feed to stabilizer
-     * @param {MutationRecord} record
+     * Recebe mutação do MutationTracker.
+     * Elementos novos (childList) vão pro stabilizer com addNewElement
+     * pra serem rastreados E marcados como "novos" no report.
      */
     addMutation(record) {
         if (this.isFinalized) return;
-
         this.mutations.push(record);
 
-        // Feed mutation targets to visual stabilizer
         if (record.type === 'childList') {
             record.addedNodes.forEach(node => {
                 if (node.nodeType === 1) {
-                    this.layoutStabilizer.addCandidate(node);
+                    const selector = this.selectorEngine.getUniqueSelector(node);
+                    this.layoutStabilizer.addNewElement(node, selector);
                 }
             });
         } else if (record.type === 'attributes' && record.target.nodeType === 1) {
@@ -200,186 +243,110 @@ class InteractionSession {
         }
     }
 
-    /**
-     * Finalize session and produce step diff
-     * @param {Object} [visualReport] - Report from layout stabilizer
-     */
     finalize(visualReport) {
         if (this.isFinalized) return;
         this.isFinalized = true;
-
-        // Stop stabilizer
         this.layoutStabilizer.stop();
 
-        // Capture post-state
-        this.afterState = this._createDOMSnapshot();
+        const step = this._buildStep(visualReport);
 
-        // Compute diff
-        const step = this._computeDiff(visualReport);
-
-        // MEMORY LEAK FIX: Clean up stabilizer
         this.layoutStabilizer.cleanup();
-        this.mutations = []; // Release mutation references
+        this.mutations = [];
 
-        // Deliver result
-        if (this.onComplete) {
-            this.onComplete(step);
-        }
+        if (this.onComplete) this.onComplete(step);
     }
 
     /**
-     * Compute step diff from before/after states and visual report
-     * @param {Object} visualReport - Visual changes report
-     * @returns {Object} Step data
-     * @private
+     * Monta o step final com effects + visual_settling.
+     * Sem visual_changes por propriedade — só o settling agregado.
      */
-    _computeDiff(visualReport) {
-        // 1. Process visual changes
-        const visualSummary = this._processVisualChanges(visualReport);
+    _buildStep(visualReport) {
+        const now = Date.now();
+        const effects = this._buildEffects();
 
-        // 2. Process attribute changes
-        const attributeChanges = this._processAttributeChanges();
-
-        // 3. Process body class changes
-        const bodyClassDiff = this._diffClasses(
-            this.beforeState.bodyClasses,
-            this.afterState.bodyClasses
-        );
-
-        // 4. Construct clean step object
         const step = {
             step_id: this.id,
             trigger: this.trigger,
-            visual_changes: visualSummary,
-            duration_ms: this.afterState.timestamp - this.trigger.timestamp
+            effects,
+            duration_ms: now - this.trigger.timestamp
         };
 
-        // Optional fields (only include if present)
-        if (attributeChanges.length > 0) {
-            step.class_changes = attributeChanges;
-        }
+        // visual_settling vem direto do stabilizer
+        if (visualReport) {
+            step.visual_settling = {
+                frames_observed: visualReport.frames_observed,
+                max_layout_shift: visualReport.max_layout_shift,
+                settle_frame: visualReport.settle_frame,
+                stabilized: visualReport.stabilized,
+                timed_out: visualReport.timed_out || false,
+                total_ms: visualReport.total_ms
+            };
 
-        if (bodyClassDiff) {
-            step.body_class_changes = bodyClassDiff;
+            // new_elements do stabilizer → effects
+            if (visualReport.new_elements?.length > 0) {
+                step.effects.new_elements = visualReport.new_elements;
+            }
         }
 
         return step;
     }
 
     /**
-     * Process visual changes from stabilizer report
-     * @param {Object} visualReport
-     * @returns {Array} Sorted, filtered visual change summaries
-     * @private
+     * Constrói effects a partir das mutações e body classes.
+     * - class_toggles: classes adicionadas/removidas por elemento
+     * - body_class_changes: diff de classes do body
+     * - visual_shift_detected: true se houve algum layout shift
      */
-    _processVisualChanges(visualReport) {
-        const visualSummary = [];
+    _buildEffects() {
+        const effects = {};
 
-        if (!visualReport?.visual_changes) return visualSummary;
+        // Class toggles dos mutations de atributo 'class'
+        const classToggles = this._extractClassToggles();
+        if (classToggles.length > 0) {
+            effects.class_toggles = classToggles;
+        }
 
-        // Properties to track with thresholds
-        const properties = [
-            { name: 'height', threshold: CONFIG.VISUAL_THRESHOLDS.HEIGHT, priority: 3 },
-            { name: 'width', threshold: CONFIG.VISUAL_THRESHOLDS.WIDTH, priority: 3 },
-            { name: 'opacity', threshold: CONFIG.VISUAL_THRESHOLDS.OPACITY, priority: 2 },
-            { name: 'display', threshold: 0, priority: 2 },
-            { name: 'visibility', threshold: 0, priority: 2 },
-            { name: 'transform', threshold: 0, priority: 1 }
-        ];
+        // Body class diff
+        const afterBodyClasses = document.body.className;
+        const bodyDiff = this._diffClasses(this.beforeBodyClasses, afterBodyClasses);
+        if (bodyDiff) {
+            effects.body_class_changes = bodyDiff;
+        }
 
-        Object.keys(visualReport.visual_changes).forEach(sel => {
-            const change = visualReport.visual_changes[sel];
-            const before = change.before;
-            const after = change.after;
-
-            properties.forEach(({ name: p, threshold }) => {
-                let valBefore = before.rect?.[p] !== undefined ? before.rect[p] : before[p];
-                let valAfter = after.rect?.[p] !== undefined ? after.rect[p] : after[p];
-
-                // Round dimensions for cleaner output
-                if (p === 'width' || p === 'height') {
-                    valBefore = Math.round(valBefore);
-                    valAfter = Math.round(valAfter);
-                }
-
-                // Calculate difference
-                const diff = typeof valBefore === 'number'
-                    ? Math.abs(valAfter - valBefore)
-                    : (valBefore !== valAfter ? 1 : 0);
-
-                // Only track significant changes
-                if (diff > threshold) {
-                    visualSummary.push({
-                        selector: sel,
-                        property: p,
-                        before: valBefore,
-                        after: valAfter,
-                        delta: typeof valBefore === 'number' ? valAfter - valBefore : null
-                    });
-                }
-            });
-        });
-
-        // Sort by significance
-        visualSummary.sort((a, b) => {
-            const priorityA = VISUAL_PROPERTY_PRIORITY[a.property] || 0;
-            const priorityB = VISUAL_PROPERTY_PRIORITY[b.property] || 0;
-
-            if (priorityA !== priorityB) return priorityB - priorityA;
-
-            // Within same priority, sort by magnitude
-            const deltaA = Math.abs(a.delta || 0);
-            const deltaB = Math.abs(b.delta || 0);
-            return deltaB - deltaA;
-        });
-
-        // Keep only top N changes (config-driven)
-        return visualSummary.slice(0, CONFIG.LIMITS.MAX_VISUAL_CHANGES);
+        return effects;
     }
 
     /**
-     * Process attribute mutations into clean changes
-     * @returns {Array} Attribute change records
-     * @private
+     * Extrai toggles de classe das mutações de atributo.
+     * Agrupa por selector, deduplica.
      */
-    _processAttributeChanges() {
-        const changes = [];
-        const seenKeys = new Set();
+    _extractClassToggles() {
+        const toggles = [];
+        const seen = new Set();
 
-        this.mutations.forEach(m => {
-            if (m.type !== 'attributes') return;
-            if (changes.length >= CONFIG.LIMITS.MAX_CLASS_CHANGES) return;
+        for (const m of this.mutations) {
+            if (m.type !== 'attributes' || m.attributeName !== 'class') continue;
+            if (toggles.length >= CONFIG.LIMITS.MAX_CLASS_CHANGES) break;
 
             const target = m.target;
-            if (target.nodeType !== 1 || m.attributeName !== 'class') return;
+            if (target.nodeType !== 1) continue;
 
             const selector = this.selectorEngine.getUniqueSelector(target);
-            const key = `${selector}:${m.attributeName}`;
+            if (seen.has(selector)) continue;
+            seen.add(selector);
 
-            if (!seenKeys.has(key)) {
-                changes.push({
-                    selector,
-                    attribute: m.attributeName,
-                    old_value: m.oldValue,
-                    new_value: target.getAttribute(m.attributeName)
-                });
-                seenKeys.add(key);
+            const diff = this._diffClasses(m.oldValue || '', target.className || '');
+            if (diff) {
+                toggles.push({ selector, ...diff });
             }
-        });
+        }
 
-        return changes;
+        return toggles;
     }
 
-    /**
-     * Diff class strings between two states
-     * @param {string} before - Before classes
-     * @param {string} after - After classes
-     * @returns {Object|null} {added, removed} or null if no changes
-     * @private
-     */
     _diffClasses(before, after) {
-        const b = new Set(before ? before.split(/\s+/).filter(c => c) : []);
-        const a = new Set(after ? after.split(/\s+/).filter(c => c) : []);
+        const b = new Set(before ? before.split(/\s+/).filter(Boolean) : []);
+        const a = new Set(after ? after.split(/\s+/).filter(Boolean) : []);
 
         const added = [...a].filter(x => !b.has(x));
         const removed = [...b].filter(x => !a.has(x));

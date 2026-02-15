@@ -22,10 +22,10 @@
                 </div>
                 <h1>FlowCapture</h1>
             </div>
-            <button class="btn-icon"
+            <button id="settings-btn"
+                    class="btn-icon"
                     aria-label="Settings"
-                    title="Settings (coming soon)"
-                    disabled>
+                    title="Settings">
                 <span class="material-icons-round" aria-hidden="true">settings</span>
             </button>
         </header>
@@ -101,12 +101,14 @@
                 </div>
 
                 <div class="action-buttons">
-                    <button id="camera-btn"
-                            class="checkpoint-btn"
-                            aria-label="Capture a checkpoint snapshot"
+                    <button id="mark-capture-btn"
+                            class="mark-capture-btn"
+                            aria-label="Mark screenshot capture point (Ctrl+Shift+C)"
+                            title="Mark screenshot point (Ctrl+Shift+C)"
                             disabled>
-                        <span class="material-icons-round" aria-hidden="true" style="font-size: 18px;">camera_alt</span>
-                        Capture Checkpoint
+                        <span class="material-icons-round" aria-hidden="true" style="font-size: 18px;">photo_camera</span>
+                        Mark Capture
+                        <span class="shortcut-badge">Ctrl+Shift+C</span>
                     </button>
 
                     <button id="stop-btn"
@@ -121,19 +123,125 @@
                     </p>
                 </div>
             </div>
+
+            <!-- SETTINGS VIEW -->
+            <div id="state-settings" class="settings-view" style="display: none;"
+                 role="region" aria-label="Extension settings">
+
+                <div class="settings-header">
+                    <button id="settings-back-btn" class="btn-icon" aria-label="Back to main view">
+                        <span class="material-icons-round" aria-hidden="true">arrow_back</span>
+                    </button>
+                    <h2 class="settings-title">Settings</h2>
+                </div>
+
+                <div class="settings-list">
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <span class="setting-label">Capture Shortcut</span>
+                            <span class="setting-desc">Keyboard shortcut for Mark Capture</span>
+                        </div>
+                        <button id="shortcut-btn" class="shortcut-recorder"
+                                aria-label="Click to change capture shortcut">
+                            <span id="shortcut-display">Ctrl+Shift+C</span>
+                        </button>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <span class="setting-label">Default Export</span>
+                            <span class="setting-desc">Format used when downloading</span>
+                        </div>
+                        <select id="export-format-select" class="setting-select"
+                                aria-label="Select default export format">
+                            <option value="workflow">Workflow (IR)</option>
+                            <option value="intent">Intent (Legacy)</option>
+                        </select>
+                    </div>
+
+                    <div class="setting-item setting-item-column">
+                        <div class="setting-info">
+                            <span class="setting-label">Screenshot Mode</span>
+                            <span class="setting-desc">How captures are taken</span>
+                        </div>
+                        <div class="radio-group" id="screenshot-mode-group">
+                            <label class="radio-option">
+                                <input type="radio" name="screenshotMode" value="dynamic" checked>
+                                <span class="radio-label">Dynamic Height</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="screenshotMode" value="fullpage">
+                                <span class="radio-label">Full Page</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="screenshotMode" value="viewport">
+                                <span class="radio-label">Viewport Only</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <span class="setting-label">Auto-minimize</span>
+                            <span class="setting-desc">Minimize overlay during recording</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="auto-minimize-toggle" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <span class="setting-label">Recording Indicator</span>
+                            <span class="setting-desc">Show red dot when minimized</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="recording-indicator-toggle" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="settings-footer">
+                    <span class="settings-version">FlowCapture v2.0</span>
+                </div>
+            </div>
         </main>
 
         <!-- FOOTER -->
         <footer>
-            <a id="download-btn"
-               class="download-link disabled"
-               role="button"
-               tabindex="0"
-               aria-label="Download recorded session data"
-               aria-disabled="true">
-                <span class="material-icons-round" aria-hidden="true">download</span>
-                <span>Download Result</span>
-            </a>
+            <!-- Download Dropdown Menu -->
+            <div class="download-menu-container">
+                <button id="download-btn"
+                        class="download-link disabled"
+                        aria-label="Download recorded session data"
+                        aria-disabled="true"
+                        aria-haspopup="menu"
+                        aria-expanded="false">
+                    <span class="material-icons-round" aria-hidden="true">download</span>
+                    <span id="download-btn-text">Download Result</span>
+                    <span class="material-icons-round dropdown-arrow" aria-hidden="true">expand_more</span>
+                </button>
+
+                <!-- Dropdown Menu -->
+                <div id="download-dropdown" class="download-dropdown" role="menu" aria-hidden="true">
+                    <button class="dropdown-item" role="menuitem" data-format="intent">
+                        <span class="material-icons-round">description</span>
+                        <div class="dropdown-item-text">
+                            <span class="dropdown-item-title">Intent (Legacy)</span>
+                            <span class="dropdown-item-desc">Debug & analysis format</span>
+                        </div>
+                    </button>
+                    <button class="dropdown-item" role="menuitem" data-format="workflow">
+                        <span class="material-icons-round">account_tree</span>
+                        <div class="dropdown-item-text">
+                            <span class="dropdown-item-title">Workflow (IR)</span>
+                            <span class="dropdown-item-desc">Executable workflow nodes</span>
+                        </div>
+                    </button>
+                </div>
+            </div>
         </footer>
     </div>
 
