@@ -12,6 +12,7 @@ export class WorkflowCompiler {
         this.screenshotCounter = 0;
         this.workflow = [];
         this.screenshotMode = options.screenshotMode || 'dynamic';
+        this.preScreenshotDelay = options.preScreenshotDelay ?? 1500;
     }
 
     /**
@@ -370,9 +371,17 @@ export class WorkflowCompiler {
     }
 
     _handleCheckpoint(step) {
-        const currentIndex = this.workflow.length;
         this.screenshotCounter++;
 
+        // Pre-screenshot delay: ensures animations/transitions finish before capture
+        if (this.preScreenshotDelay > 0) {
+            this._addWaitNode('Wait before screenshot', {
+                condition: 'fixed-time',
+                timeoutMs: this.preScreenshotDelay
+            });
+        }
+
+        const currentIndex = this.workflow.length;
         this.workflow.push({
             type: 'SCREENSHOT',
             label: 'Checkpoint screenshot',
@@ -652,9 +661,17 @@ export class WorkflowCompiler {
      */
     _handleCapturePoint(step) {
         const label = step.trigger.captureLabel || 'Capture screenshot';
-        const currentIndex = this.workflow.length;
         this.screenshotCounter++;
 
+        // Pre-screenshot delay: ensures animations/transitions finish before capture
+        if (this.preScreenshotDelay > 0) {
+            this._addWaitNode('Wait before screenshot', {
+                condition: 'fixed-time',
+                timeoutMs: this.preScreenshotDelay
+            });
+        }
+
+        const currentIndex = this.workflow.length;
         const sanitized = label.replace(/[<>:"/\\|?*\s]+/g, '_').substring(0, 40);
         const params = {
             ...this._screenshotModeParams(),
@@ -1000,10 +1017,10 @@ export class WorkflowCompiler {
             });
         }
 
-        // WAIT: let content load after tab/accordion click
+        // WAIT: let content load after tab/accordion click + pre-screenshot delay
         actions.push({
             type: 'WAIT',
-            params: { timeoutMs: 500 }
+            params: { timeoutMs: Math.max(500, this.preScreenshotDelay) }
         });
 
         // SCREENSHOT: capture with loop-indexed filename
