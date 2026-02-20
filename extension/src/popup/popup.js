@@ -61,11 +61,45 @@ class PopupController {
         this._shortcutListener = null;
         this._isRecordingExpandShortcut = false;
         this._expandShortcutListener = null;
+        this._messageListener = null;
 
-        // Cleanup timer interval when popup window closes
-        window.addEventListener('unload', () => this.timer.stop());
+        // Cleanup all resources when popup window closes
+        window.addEventListener('unload', () => this._cleanup());
 
         this._init();
+    }
+
+    /**
+     * Cleanup all resources (timer, listeners) on window unload
+     * Prevents memory leaks from lingering intervals and event listeners
+     * @private
+     */
+    _cleanup() {
+        // Stop timer interval
+        if (this.timer) {
+            this.timer.stop();
+        }
+
+        // Remove message listener
+        if (this._messageListener) {
+            chrome.runtime.onMessage.removeListener(this._messageListener);
+            this._messageListener = null;
+        }
+
+        // Remove shortcut recording listeners if active
+        if (this._shortcutListener) {
+            document.removeEventListener('keydown', this._shortcutListener);
+            this._shortcutListener = null;
+        }
+
+        if (this._expandShortcutListener) {
+            document.removeEventListener('keydown', this._expandShortcutListener);
+            this._expandShortcutListener = null;
+        }
+
+        // Reset recording states
+        this._isRecordingShortcut = false;
+        this._isRecordingExpandShortcut = false;
     }
 
     /**
@@ -131,12 +165,15 @@ class PopupController {
      * Listen for messages from content script
      */
     _setupMessageListener() {
-        chrome.runtime.onMessage.addListener((msg) => {
+        // Store listener reference for cleanup
+        this._messageListener = (msg) => {
             if (msg.action === MESSAGE_ACTIONS.INTENT_UPDATED) {
                 this.ui.updateEventCount(msg.count);
                 StorageManager.updateEventCount(msg.count).catch(console.error);
             }
-        });
+        };
+
+        chrome.runtime.onMessage.addListener(this._messageListener);
     }
 
     /**
