@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Selector Engine Test - FlowCapture</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h2 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .modal-content {
+            padding: 20px;
+            border: 2px solid #007bff;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .list-details p {
+            margin: 8px 0;
+            padding: 8px;
+            background: #f0f8ff;
+        }
+        .quote-content {
+            background: #fff9e6;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        .number-list {
+            font-weight: bold;
+            color: #007bff;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            background: #007bff;
+            color: white;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .result {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .test-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f8f9fa;
+            border-left: 4px solid #28a745;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .test-item:hover {
+            background: #e9ecef;
+            border-left-color: #007bff;
+        }
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .old-selector {
+            background: #ffe6e6;
+            padding: 10px;
+            border-left: 4px solid #dc3545;
+        }
+        .new-selector {
+            background: #e6ffe6;
+            padding: 10px;
+            border-left: 4px solid #28a745;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Teste do Selector Engine - FlowCapture</h1>
+
+    <div class="test-container">
+        <h2>📋 Instruções</h2>
+        <ol>
+            <li>Abra o DevTools (F12)</li>
+            <li>Recarregue a extensão FlowCapture em <code>chrome://extensions</code></li>
+            <li>Clique nos elementos abaixo para ver os seletores gerados</li>
+            <li>Compare os resultados com os exemplos esperados</li>
+        </ol>
+    </div>
+
+    <!-- DUPLICATE ID SCENARIO -->
+    <div class="test-container">
+        <h2>🔴 Teste 1: IDs Duplicados (Bug Original)</h2>
+        <p><strong>Cenário:</strong> Dois elementos com mesmo ID (HTML inválido mas comum em SPAs)</p>
+
+        <div id="imaavy-tab-container" class="modal-content">
+            <h3>Modal 1 - Healthcare Professionals</h3>
+            <div class="quote-content">
+                <div class="list-details">
+                    <p class="fw-bold test-item" data-label="Item do Modal 1">
+                        <span class="number-list">1—SEND</span> Benefits investigation request
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div id="imaavy-tab-container" class="modal-content">
+            <h3>Modal 2 - Patient Resources</h3>
+            <div class="quote-content">
+                <div class="list-details">
+                    <p class="fw-bold test-item" data-label="Item do Modal 2">
+                        <span class="number-list">1—START</span> An electronic prescription (eRx)
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="comparison">
+            <div class="old-selector">
+                <strong>❌ Old Engine (Buggy):</strong><br>
+                <code>#imaavy-tab-container</code><br>
+                <small>Sempre seleciona o primeiro, ignora o segundo!</small>
+            </div>
+            <div class="new-selector">
+                <strong>✅ New Engine (Fixed):</strong><br>
+                <code>//p[contains(@class,'fw-bold')][contains(text(),'SEND')]</code><br>
+                <small>Usa XPath com conteúdo → seleciona corretamente!</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- CAROUSEL SCENARIO -->
+    <div class="test-container">
+        <h2>🔄 Teste 2: Carrossel (nth-of-type frágil)</h2>
+        <p><strong>Cenário:</strong> Slides que podem reordenar</p>
+
+        <div class="modal-content carousel">
+            <h3>Carousel Container</h3>
+            <div class="slide-content active">
+                <p class="test-item slide-1">Slide 1 - Currently Active</p>
+            </div>
+            <div class="slide-content">
+                <p class="test-item slide-2">Slide 2 - Setting up Treatment</p>
+            </div>
+            <div class="slide-content">
+                <p class="test-item slide-3">Slide 3 - Benefits Investigation</p>
+            </div>
+            <div class="slide-content">
+                <p class="test-item slide-4">Slide 4 - Prescription Details</p>
+            </div>
+        </div>
+
+        <button onclick="reorderSlides()">🔀 Reordenar Slides (Simular Navegação)</button>
+
+        <div class="comparison">
+            <div class="old-selector">
+                <strong>❌ Old Engine (Fragile):</strong><br>
+                <code>div.slide-content:nth-of-type(2) > p</code><br>
+                <small>Quebra quando slides mudam de posição!</small>
+            </div>
+            <div class="new-selector">
+                <strong>✅ New Engine (Robust):</strong><br>
+                <code>//p[contains(text(),'Setting up Treatment')]</code><br>
+                <small>Funciona independente da posição!</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONTENT-BASED SELECTION -->
+    <div class="test-container">
+        <h2>📝 Teste 3: Seleção Baseada em Conteúdo</h2>
+        <p><strong>Cenário:</strong> Elementos em diferentes modais com estrutura similar</p>
+
+        <div class="quote-content prepare-treat">
+            <h4>Modal A - Prepare Treatment</h4>
+            <div>
+                <div>
+                    <div>
+                        <div class="list-details">
+                            <p class="fw-bold test-item" data-modal="A">
+                                Complete form and submit documentation
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="quote-content patient-support">
+            <h4>Modal B - Patient Support</h4>
+            <div>
+                <div class="list-details">
+                    <p class="fw-bold test-item" data-modal="B">
+                        Review patient eligibility criteria
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="comparison">
+            <div class="old-selector">
+                <strong>❌ Old Engine (Too Specific):</strong><br>
+                <code>div.quote-content > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > div.list-details > p</code><br>
+                <small>Apenas funciona no Modal A!</small>
+            </div>
+            <div class="new-selector">
+                <strong>✅ New Engine (Generic):</strong><br>
+                <code>//p[@class='fw-bold'][contains(text(),'Complete form')]</code><br>
+                <code>aria/Complete form and submit documentation</code><br>
+                <small>Funciona em qualquer modal!</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2>🎯 Como Testar</h2>
+        <div id="test-results" class="result">
+Aguardando... Clique em qualquer elemento com classe "test-item" para ver o seletor gerado.
+
+Passos:
+1. Recarregue a extensão FlowCapture
+2. Clique em qualquer item verde acima
+3. Abra o Console do DevTools (F12)
+4. Veja o seletor gerado e compare com os exemplos
+        </div>
+    </div>
+
+    <script>
+        // Test selector engine integration
+        document.querySelectorAll('.test-item').forEach(item => {
+            item.addEventListener('click', function(e) {
+                const el = e.target.closest('.test-item');
+                const label = el.getAttribute('data-label') || el.textContent.trim();
+
+                console.log('========================================');
+                console.log('🎯 ELEMENTO CLICADO:', label);
+                console.log('Element:', el);
+
+                // Check if FlowCapture selector engine is available
+                if (window.flowCapture?.selectorEngine) {
+                    const selector = window.flowCapture.selectorEngine.computeSelector(el);
+                    console.log('✅ NOVO SELETOR GERADO:', selector);
+
+                    // Test selector
+                    try {
+                        let found;
+                        if (selector.startsWith('//')) {
+                            // XPath
+                            const result = document.evaluate(selector, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                            found = result.singleNodeValue;
+                        } else if (selector.startsWith('aria/')) {
+                            // Can't test aria in pure JS
+                            console.log('   ℹ️ ARIA selector - teste apenas no Puppeteer');
+                            found = el; // Assume works
+                        } else if (selector.startsWith('text::')) {
+                            // Can't test text:: in pure JS
+                            console.log('   ℹ️ Text selector - teste apenas no Puppeteer');
+                            found = el; // Assume works
+                        } else {
+                            // CSS
+                            found = document.querySelector(selector);
+                        }
+
+                        if (found === el) {
+                            console.log('   ✅ Seletor é ÚNICO e CORRETO!');
+                        } else if (found) {
+                            console.log('   ⚠️ Seletor encontrou OUTRO elemento:', found);
+                        } else {
+                            console.log('   ❌ Seletor NÃO encontrou nenhum elemento!');
+                        }
+                    } catch (err) {
+                        console.log('   ⚠️ Erro testando seletor:', err.message);
+                    }
+
+                    // Get all candidate selectors
+                    const candidates = window.flowCapture.selectorEngine.getMultipleCandidates(el, 5);
+                    console.log('📋 CANDIDATOS ALTERNATIVOS:', candidates);
+
+                    // Display in UI
+                    document.getElementById('test-results').textContent =
+                        `✅ SELETOR GERADO:\n${selector}\n\n` +
+                        `📋 CANDIDATOS:\n${candidates.map(c => `  ${c.strategy}: ${c.selector}`).join('\n')}\n\n` +
+                        `Veja o console para detalhes completos.`;
+
+                } else {
+                    console.error('❌ FlowCapture selector engine NÃO está disponível!');
+                    console.log('   Certifique-se de que a extensão está carregada.');
+
+                    document.getElementById('test-results').textContent =
+                        '❌ FlowCapture não detectado!\n\n' +
+                        'Passos:\n' +
+                        '1. Vá para chrome://extensions\n' +
+                        '2. Recarregue a extensão FlowCapture\n' +
+                        '3. Recarregue esta página\n' +
+                        '4. Tente novamente';
+                }
+
+                console.log('========================================');
+            });
+        });
+
+        // Reorder slides simulation
+        function reorderSlides() {
+            const carousel = document.querySelector('.carousel');
+            const slides = Array.from(carousel.querySelectorAll('.slide-content'));
+
+            // Random shuffle
+            for (let i = slides.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                carousel.appendChild(slides[j]);
+            }
+
+            console.log('🔀 Slides reordenados! Os nth-of-type selectors agora apontam para elementos diferentes.');
+            alert('Slides reordenados! Clique nos slides novamente para ver como os seletores se comportam.');
+        }
+    </script>
+</body>
+</html>

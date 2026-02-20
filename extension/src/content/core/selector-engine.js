@@ -18,6 +18,7 @@
  */
 
 import { CONFIG } from '../../shared/constants.js';
+import { INTERACTIVE_ELEMENTS } from '../../shared/interactive-elements.js';
 
 export class SelectorEngine {
     constructor() {
@@ -31,11 +32,6 @@ export class SelectorEngine {
 
         // Dynamic state classes that change at runtime (break selectors on replay)
         this._stateClassPattern = /^(active|selected|focused|focus|hover|open|opened|closed|collapsed|expanded|disabled|hidden|visible|show|hide|checked|current|is-active|is-open|is-selected|is-visible|is-hidden|is-disabled|is-expanded|is-collapsed|toggled|highlighted|pressed|dragging|loading|loaded|entering|leaving|entered|exited)$/;
-
-        // Interactive HTML tags and ARIA roles (used for ancestor bubbling)
-        this._interactiveTags = new Set(['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY', 'DETAILS']);
-        this._interactiveRoles = new Set(['button', 'link', 'tab', 'checkbox', 'radio', 'menuitem',
-            'option', 'combobox', 'switch', 'menuitemcheckbox', 'menuitemradio', 'treeitem', 'gridcell']);
     }
 
     /**
@@ -51,38 +47,6 @@ export class SelectorEngine {
         } catch {
             return false;
         }
-    }
-
-    /**
-     * Returns true if el is a natively interactive/clickable element.
-     * @param {Element} el
-     * @returns {boolean}
-     * @private
-     */
-    _isInteractiveElement(el) {
-        if (this._interactiveTags.has(el.tagName)) return true;
-        const role = el.getAttribute('role');
-        if (role && this._interactiveRoles.has(role)) return true;
-        if (el.hasAttribute('onclick') || el.getAttribute('tabindex') === '0') return true;
-        return false;
-    }
-
-    /**
-     * If el is a non-interactive wrapper (e.g. <div> inside <button>),
-     * return the nearest interactive ancestor. Stops at document.body.
-     * This prevents fragile path selectors when clicking presentational wrappers.
-     * @param {Element} el
-     * @returns {Element}
-     * @private
-     */
-    _findInteractiveAncestor(el) {
-        if (this._isInteractiveElement(el)) return el;
-        let current = el.parentElement;
-        while (current && current !== document.body) {
-            if (this._isInteractiveElement(current)) return current;
-            current = current.parentElement;
-        }
-        return el; // No interactive ancestor found — use original element
     }
 
     /**
@@ -122,7 +86,7 @@ export class SelectorEngine {
 
         // Bubble up to nearest interactive ancestor (e.g. <div> inside <button> → <button>)
         // This prevents fragile path selectors when clicking presentational wrappers
-        const resolvedEl = this._findInteractiveAncestor(el);
+        const resolvedEl = this.INTERACTIVE_ELEMENTS.findInteractiveAncestor(el);
         if (resolvedEl !== el) {
             console.debug(`[SelectorEngine] Bubbled from <${el.tagName.toLowerCase()}> to <${resolvedEl.tagName.toLowerCase()}>`);
             el = resolvedEl;
@@ -174,7 +138,7 @@ export class SelectorEngine {
      */
     _computeSelector(el) {
         // Bubble up to nearest interactive ancestor before applying strategies
-        el = this._findInteractiveAncestor(el);
+        el = this.INTERACTIVE_ELEMENTS.findInteractiveAncestor(el);
 
         // Strategy 1: ID (only if truly unique on page)
         if (el.id && !this._isBogusValue(el.id) && this._isIdUnique(el.id)) {

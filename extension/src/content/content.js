@@ -65,6 +65,9 @@ if (window.hasFlowCapture) {
                     { MutationTracker },
                     { StateManager },
                     { OverlayUI },
+                    { ShortcutMatcher },
+                    { VisualFeedback },
+                    { ExpansionManager },
                     { CONFIG, MESSAGE_ACTIONS, DEFAULT_SETTINGS }
                 ] = await Promise.all([
                     import(resolveModule('src/content/core/selector-engine.js')),
@@ -72,6 +75,9 @@ if (window.hasFlowCapture) {
                     import(resolveModule('src/content/core/mutation-tracker.js')),
                     import(resolveModule('src/content/core/state-manager.js')),
                     import(resolveModule('src/content/ui/overlay.js')),
+                    import(resolveModule('src/content/services/shortcut-matcher.js')),
+                    import(resolveModule('src/content/ui/visual-feedback.js')),
+                    import(resolveModule('src/content/services/expansion-manager.js')),
                     import(resolveModule('src/shared/constants.js'))
                 ]);
 
@@ -89,6 +95,15 @@ if (window.hasFlowCapture) {
 
                 this.mutationTracker = new MutationTracker(
                     (mutation) => this.sessionManager.addMutation(mutation)
+                );
+
+                // Initialize services
+                this.visualFeedback = new VisualFeedback();
+                this.visualFeedback.initializeAnimations();
+
+                this.expansionManager = new ExpansionManager(
+                    this.selectorEngine,
+                    this.sessionManager
                 );
 
                 // Initialize UI
@@ -161,9 +176,6 @@ if (window.hasFlowCapture) {
                 this._mouseY = e.clientY;
             }, { passive: true, capture: true });
 
-            // Track expanded elements for undo/toggle
-            this._expandedElements = new WeakMap();
-
             // Click capture with coordinates and modifiers
             document.addEventListener('click', (e) => {
                 if (!this.stateManager.isRecording) return;
@@ -193,41 +205,25 @@ if (window.hasFlowCapture) {
             document.addEventListener('keydown', (e) => {
                 if (!this.stateManager.isRecording) return;
                 try {
-                    // Dynamic shortcut matching (configurable via Settings)
-                    const sc = this.captureShortcut;
-                    if (sc &&
-                        e.ctrlKey === !!sc.ctrl &&
-                        e.shiftKey === !!sc.shift &&
-                        e.altKey === !!sc.alt &&
-                        e.metaKey === !!sc.meta &&
-                        e.key.toUpperCase() === sc.key.toUpperCase()
-                    ) {
+                    // Capture shortcut (configurable via Settings)
+                    if (ShortcutMatcher.isCapture(e, this.captureShortcut)) {
                         e.preventDefault();
                         this._triggerMarkCapture();
                         return;
                     }
 
-                    // Expand shortcut matching
-                    const es = this.expandShortcut;
-                    if (es &&
-                        e.ctrlKey === !!es.ctrl &&
-                        e.shiftKey === !!es.shift &&
-                        e.altKey === !!es.alt &&
-                        e.metaKey === !!es.meta &&
-                        e.key.toUpperCase() === es.key.toUpperCase()
-                    ) {
+                    // Expand shortcut
+                    if (ShortcutMatcher.isExpand(e, this.expandShortcut)) {
                         e.preventDefault();
                         this._triggerExpandUnderCursor();
                         return;
                     }
 
                     // Manual height adjustment (Ctrl+Shift+Up/Down)
-                    if (e.ctrlKey && e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+                    if (ShortcutMatcher.isHeightAdjustment(e)) {
                         e.preventDefault();
                         e.stopPropagation();
-                        // Up = increase height, Down = decrease
-                        const step = this.manualExpandStep || 50;
-                        const delta = e.key === 'ArrowUp' ? step : -step;
+                        const delta = ShortcutMatcher.getHeightDelta(e, this.manualExpandStep || 50);
                         this._adjustExpandedHeight(delta);
                         return;
                     }
@@ -510,7 +506,7 @@ if (window.hasFlowCapture) {
             }
 
             console.log(`📸 FlowCapture: Marked via shortcut/button - "${label}"`);
-            this._showActionIcon('capture');
+            this.visualFeedback.showActionIcon('capture');
         }
 
         /**
@@ -528,80 +524,41 @@ if (window.hasFlowCapture) {
             const el = document.elementFromPoint(this._mouseX, this._mouseY);
             if (!el || el.id === 'flow-capture-overlay-root' || el.closest?.('#flow-capture-overlay-root')) {
                 console.warn('FlowCapture: No expandable element under cursor');
-                this._showExpandFeedback(null, false);
+                this.visualFeedback.showElementOutline(null, 'error');
                 return;
             }
 
             // Find nearest constrained container
-            const container = this._findConstrainedContainer(el);
+            const container = this.expansionManager.findConstrainedContainer(el);
             if (!container) {
                 // Check if element itself or an ancestor was previously expanded (for undo)
-                const undone = this._tryUndoExpand(el);
-                if (undone) return;
+                if (this.expansionManager.tryUndo(el)) return;
 
                 console.warn('FlowCapture: No constrained container found near cursor');
-                this._showExpandFeedback(el, false);
+                this.visualFeedback.showElementOutline(el, 'error');
                 return;
             }
 
             // Check if this container was already expanded → undo
-            if (this._expandedElements.has(container)) {
-                this._undoExpansion(container);
+            if (this.expansionManager.isExpanded(container)) {
+                this.expansionManager.undo(container);
+                this.visualFeedback.showElementOutline(container, 'undo');
                 return;
             }
 
-            // Apply live CSS expansion
-            const originalStyles = this._applyExpansion(container);
-
-            // Store for undo and manual adjustment
-            this._expandedElements.set(container, originalStyles);
-            this._lastExpandedElement = container;
-
-            // Generate selector for recording
-            const selector = this.selectorEngine.getUniqueSelector(container);
-
-            // Record as 'expand' event
-            this.sessionManager.startSession({
-                type: 'expand',
-                target: container,
-                expandParams: {
-                    selector,
-                    mode: 'fit-content',
-                    clearAncestorConstraints: true,
-                    appliedHeight: container.style.height
-                }
+            // Apply live CSS expansion + record
+            this.expansionManager.expandElement(container, {
+                mode: 'fit-content',
+                clearAncestorConstraints: true
             });
 
             // Show visual feedback
-            this._showExpandFeedback(container, true);
+            this.visualFeedback.showElementOutline(container, 'success');
             this.overlay.showToast(`Expanded: ${Math.round(container.getBoundingClientRect().height)}px`, 'success');
-            this._showActionIcon('expand');
+            this.visualFeedback.showActionIcon('expand');
 
+            const selector = this.selectorEngine.getUniqueSelector(container);
             console.log(`📐 FlowCapture: Expanded ${selector} (${container.scrollHeight}px)`);
-        }
-
-        /**
-         * Monitor manual height adjustments to debounce recording
-         * @private
-         */
-        _recordHeightAdjustment(el, height) {
-            if (this._heightAdjustmentTimeout) clearTimeout(this._heightAdjustmentTimeout);
-
-            this._heightAdjustmentTimeout = setTimeout(() => {
-                const selector = this.selectorEngine.getUniqueSelector(el);
-                // Use EXPAND (absolute) instead of SET_STYLE to ensure ancestor limitations are cleared during replay
-                this.sessionManager.startSession({
-                    type: 'expand',
-                    target: el,
-                    expandParams: {
-                        selector,
-                        mode: 'absolute',
-                        value: height,
-                        clearAncestorConstraints: true
-                    }
-                });
-                console.log(`📏 Recorded manual height adjustment (EXPAND absolute): ${height}px`);
-            }, 600);
         }
 
         /**
@@ -610,253 +567,22 @@ if (window.hasFlowCapture) {
          * @private
          */
         _adjustExpandedHeight(delta) {
-            const el = this._lastExpandedElement;
-            // Check if element is still valid and was expanded by us
-            if (!el || !this._expandedElements.has(el)) {
+            const success = this.expansionManager.adjustHeight(null, delta);
+
+            if (!success) {
                 this.overlay.showToast('Select an element to expand first (Ctrl+Shift+E)', 'error');
                 return;
             }
 
-            const currentRect = el.getBoundingClientRect();
-            const currentHeight = currentRect.height;
-            const newHeight = Math.max(50, currentHeight + delta); // Min 50px
-
-            el.style.setProperty('height', `${newHeight}px`, 'important');
+            const el = this.expansionManager.getLastExpandedElement();
+            const newHeight = el.getBoundingClientRect().height;
 
             // Show toast with new height
-            this.overlay.showToast(`Height: ${Math.round(newHeight)}px`, 'info', 1000); // Short duration for rapid updates
-            this._showExpandFeedback(el, true);
-            this._showActionIcon(delta > 0 ? 'adjust-up' : 'adjust-down');
-
-            // Record the change
-            this._recordHeightAdjustment(el, newHeight);
+            this.overlay.showToast(`Height: ${Math.round(newHeight)}px`, 'info', 1000);
+            this.visualFeedback.showElementOutline(el, 'success');
+            this.visualFeedback.showActionIcon(delta > 0 ? 'adjust-up' : 'adjust-down');
         }
 
-        /**
-         * Walk up from element to find nearest constrained container.
-         * A container is "constrained" if scrollHeight > clientHeight + threshold.
-         * Skips <html> and <body>.
-         * @param {Element} startEl
-         * @returns {Element|null}
-         * @private
-         */
-        _findConstrainedContainer(startEl) {
-            let el = startEl;
-            const threshold = 5;
-
-            while (el && el !== document.documentElement && el !== document.body) {
-                if (el.scrollHeight > el.clientHeight + threshold) {
-                    const cs = getComputedStyle(el);
-                    const hasFixedHeight = cs.height !== 'auto' && cs.height !== '';
-                    const hasMaxHeight = cs.maxHeight !== 'none' && cs.maxHeight !== '';
-                    const hasOverflowClip = cs.overflow === 'hidden' || cs.overflowY === 'hidden'
-                        || cs.overflow === 'auto' || cs.overflowY === 'auto'
-                        || cs.overflow === 'scroll' || cs.overflowY === 'scroll';
-
-                    if (hasFixedHeight || hasMaxHeight || hasOverflowClip) {
-                        return el;
-                    }
-                }
-                el = el.parentElement;
-            }
-
-            // Fallback: startEl itself if it has fixed height or max-height
-            const cs = getComputedStyle(startEl);
-            if (cs.height !== 'auto' || cs.maxHeight !== 'none') {
-                return startEl;
-            }
-
-            return null;
-        }
-
-        /**
-         * Apply expansion CSS to a container + clear ancestor constraints.
-         * @param {Element} container
-         * @returns {Object} Snapshot of original style values for undo
-         * @private
-         */
-        _applyExpansion(container) {
-            const originalStyles = {
-                container: {
-                    height: container.style.height,
-                    maxHeight: container.style.maxHeight,
-                    overflow: container.style.overflow,
-                    overflowY: container.style.overflowY
-                },
-                ancestors: []
-            };
-
-            // Expand the container
-            const targetHeight = container.scrollHeight;
-            container.style.setProperty('height', `${targetHeight}px`, 'important');
-            container.style.setProperty('max-height', 'none', 'important');
-            container.style.setProperty('overflow', 'visible', 'important');
-
-            // Walk up ancestors and clear height/max-height/overflow constraints
-            let ancestor = container.parentElement;
-            let depth = 0;
-            const maxDepth = 10;
-
-            while (ancestor && ancestor !== document.documentElement && depth < maxDepth) {
-                const cs = getComputedStyle(ancestor);
-                const needsClear = (
-                    (cs.height !== 'auto' && cs.height !== '') ||
-                    (cs.maxHeight !== 'none' && cs.maxHeight !== '') ||
-                    cs.overflow === 'hidden' || cs.overflowY === 'hidden'
-                );
-
-                if (needsClear) {
-                    originalStyles.ancestors.push({
-                        element: ancestor,
-                        height: ancestor.style.height,
-                        maxHeight: ancestor.style.maxHeight,
-                        overflow: ancestor.style.overflow,
-                        overflowY: ancestor.style.overflowY
-                    });
-
-                    ancestor.style.setProperty('height', 'auto', 'important');
-                    ancestor.style.setProperty('max-height', 'none', 'important');
-                    ancestor.style.setProperty('overflow', 'visible', 'important');
-                }
-
-                ancestor = ancestor.parentElement;
-                depth++;
-            }
-
-            return originalStyles;
-        }
-
-        /**
-         * Undo a previous expansion, restoring original CSS.
-         * @param {Element} container
-         * @private
-         */
-        _undoExpansion(container) {
-            const saved = this._expandedElements.get(container);
-            if (!saved) return;
-
-            // Restore container styles
-            const c = saved.container;
-            container.style.height = c.height;
-            container.style.maxHeight = c.maxHeight;
-            container.style.overflow = c.overflow;
-            container.style.overflowY = c.overflowY;
-
-            // Restore ancestor styles
-            for (const a of saved.ancestors) {
-                a.element.style.height = a.height;
-                a.element.style.maxHeight = a.maxHeight;
-                a.element.style.overflow = a.overflow;
-                a.element.style.overflowY = a.overflowY;
-            }
-
-            this._expandedElements.delete(container);
-            this._showExpandFeedback(container, false, true);
-
-            const selector = this.selectorEngine.getUniqueSelector(container);
-            console.log(`↩️ FlowCapture: Undid expansion on ${selector}`);
-        }
-
-        /**
-         * Try to undo expansion on the element or any ancestor.
-         * Used when _findConstrainedContainer returns null (element already expanded).
-         * @param {Element} startEl
-         * @returns {boolean} True if an undo was performed
-         * @private
-         */
-        _tryUndoExpand(startEl) {
-            let el = startEl;
-            while (el && el !== document.documentElement) {
-                if (this._expandedElements.has(el)) {
-                    this._undoExpansion(el);
-                    return true;
-                }
-                el = el.parentElement;
-            }
-            return false;
-        }
-
-        /**
-         * Show floating action icon above overlay for shortcut feedback.
-         * @param {string} iconType - 'capture' | 'expand' | 'adjust-up' | 'adjust-down'
-         * @private
-         */
-        _showActionIcon(iconType) {
-            // Icon characters
-            const icons = {
-                'capture': '📸',
-                'expand': '📐',
-                'adjust-up': '⬆️',
-                'adjust-down': '⬇️'
-            };
-
-            const icon = icons[iconType] || '✓';
-
-            // Create floating icon element
-            const iconEl = document.createElement('div');
-            iconEl.textContent = icon;
-            iconEl.style.cssText = `
-                position: fixed;
-                top: 20px;
-                left: 50%;
-                transform: translateX(-50%);
-                font-size: 48px;
-                background: rgba(0, 0, 0, 0.8);
-                padding: 16px 24px;
-                border-radius: 12px;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-                z-index: 2147483646;
-                pointer-events: none;
-                animation: fc-icon-fade 2s ease-out forwards;
-            `;
-
-            // Add animation CSS if not exists
-            if (!document.getElementById('fc-icon-animation')) {
-                const style = document.createElement('style');
-                style.id = 'fc-icon-animation';
-                style.textContent = `
-                    @keyframes fc-icon-fade {
-                        0% { opacity: 1; transform: translateX(-50%) translateY(0); }
-                        70% { opacity: 1; }
-                        100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
-                    }
-                `;
-                document.head.appendChild(style);
-            }
-
-            document.body.appendChild(iconEl);
-
-            // Remove after animation
-            setTimeout(() => iconEl.remove(), 2000);
-        }
-
-        /**
-         * Show brief visual feedback on an element.
-         * @param {Element|null} el
-         * @param {boolean} success - true = expanded, false = failed or undone
-         * @param {boolean} isUndo - true if this is an undo feedback
-         * @private
-         */
-        _showExpandFeedback(el, success, isUndo = false) {
-            if (!el) return;
-
-            const origOutline = el.style.outline;
-            const origTransition = el.style.transition;
-
-            if (isUndo) {
-                el.style.outline = '3px solid #f59e0b'; // amber = undone
-            } else {
-                el.style.outline = success
-                    ? '3px solid #22c55e'  // green = expanded
-                    : '3px solid #ef4444'; // red = failed
-            }
-            el.style.transition = 'outline 0.3s ease';
-
-            setTimeout(() => {
-                el.style.outline = origOutline;
-                el.style.transition = origTransition;
-            }, 1500);
-        }
 
         /**
          * Handle completed interaction session
