@@ -30,7 +30,8 @@
             "resources": [
                 "src/shared/*.js",
                 "src/content/core/*.js",
-                "src/content/ui/*.js"
+                "src/content/ui/*.js",
+                "src/content/helpers/*.js"
             ],
             "matches": [
                 "<all_urls>"

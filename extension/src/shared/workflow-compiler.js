@@ -46,6 +46,9 @@ export class WorkflowCompiler {
         // 5. Node OUTPUT final
         this._addOutputNode();
 
+        // 6. Validate compiled workflow
+        this._validateWorkflow(this.workflow);
+
         return this.workflow;
     }
 
@@ -53,8 +56,42 @@ export class WorkflowCompiler {
      * Processa um step individual
      * @private
      */
+    /**
+     * Compute how long to wait before a screenshot step, based on:
+     * - Visual settling time of the previous step (measured by LayoutStabilizer)
+     * - Actual time the user paused between interactions (60% of real delta, capped at 4s)
+     * @private
+     */
+    _computeInterStepWait(step, index, allSteps) {
+        if (index === 0) return 0;
+        const prev = allSteps[index - 1];
+        const prevTs = prev.trigger?.timestamp || 0;
+        const currTs = step.trigger?.timestamp || 0;
+        const interStepMs = currTs - prevTs;
+
+        // Minimum = measured settling time of the previous step
+        const prevSettlingMs = prev.visual_settling?.total_ms || 0;
+
+        // Scale inter-step time: 60% of user's actual pause, capped at 4000ms
+        const scaledPause = interStepMs > 800 ? Math.min(Math.round(interStepMs * 0.6), 4000) : 0;
+
+        const wait = Math.max(prevSettlingMs, scaledPause);
+        return wait > 250 ? Math.round(wait) : 0;
+    }
+
     _processStep(step, index, allSteps) {
         const triggerType = step.trigger?.type;
+
+        // Add timing-based wait BEFORE screenshot capture points:
+        // This handles the gap between the last interaction (e.g. click) and when
+        // the user actually marked the screenshot — preserving the page's loaded state.
+        // Only for explicit capture_point/checkpoint — not for click/scroll (those add their own waits).
+        if (index > 0 && (triggerType === 'capture_point' || triggerType === 'checkpoint')) {
+            const waitMs = this._computeInterStepWait(step, index, allSteps);
+            if (waitMs > 0) {
+                this._addWaitNode(`Wait for state to settle`, { condition: 'fixed-time', timeoutMs: waitMs });
+            }
+        }
 
         // Skip focus events if previous step was click on the same element (redundant)
         if (triggerType === 'focus' && index > 0) {
@@ -64,16 +101,12 @@ export class WorkflowCompiler {
             }
         }
 
-        // Skip scroll events if next step is also scroll in same direction (merge)
+        // Skip scroll events if next step is also scroll (keep last = final position)
         if (triggerType === 'scroll' && index < allSteps.length - 1) {
             const next = allSteps[index + 1];
             if (next.trigger?.type === 'scroll') {
-                const curDelta = step.trigger?.scroll?.delta?.y || 0;
-                const nextDelta = next.trigger?.scroll?.delta?.y || 0;
-                // Same direction = skip this one, next iteration handles it
-                if ((curDelta > 0 && nextDelta > 0) || (curDelta < 0 && nextDelta < 0)) {
-                    return;
-                }
+                // With scroll-to mode, the last scroll has the final absolute position
+                return;
             }
         }
 
@@ -160,10 +193,21 @@ export class WorkflowCompiler {
     }
 
     _handleClick(step) {
-        const selector = step.trigger.selector;
+        const selector = step.trigger?.selector;
+        if (!selector) return;
         const currentIndex = this.workflow.length;
 
+        const metadata = step.trigger.metadata || {};
+        const elementText = metadata.text || metadata.ariaLabel || '';
+
         const params = { selector };
+
+        // Playwright semantic locator hints — used by /api/replay for robust role-based clicks
+        // elementRole: the interactive element type (button, a, input, etc.)
+        // elementName: the accessible name (visible text or aria-label)
+        if (metadata.tagName) params.elementRole = metadata.tagName.toLowerCase();
+        if (elementText) params.elementName = elementText;
+        if (metadata.ariaLabel) params.ariaLabel = metadata.ariaLabel;
 
         // Add fallback selectors for robustness
         this._addFallbacks(params, step);
@@ -177,9 +221,6 @@ export class WorkflowCompiler {
             params.expectNavigation = true;
         }
 
-        const metadata = step.trigger.metadata || {};
-        const elementText = metadata.text || metadata.ariaLabel || '';
-
         this.workflow.push({
             type: 'CLICK',
             label: `Click on ${this._getReadableSelector(selector, elementText)}`,
@@ -187,10 +228,20 @@ export class WorkflowCompiler {
             connections: [{ to: currentIndex + 1, condition: 'success' }]
         });
         this.nodeIdCounter++;
+
+        // Add WAIT for visual settling — accordion opens, modal appears, animation plays, etc.
+        // Uses the measured settling time from the layout stabilizer (recorded by the extension).
+        const settlingMs = step.visual_settling?.total_ms || 0;
+        const hasVisualChange = this._hasSignificantVisualChanges(step);
+        if (hasVisualChange || settlingMs > 150) {
+            const waitMs = Math.min(Math.max(settlingMs, 300), 2500);
+            this._addWaitNode('Wait for DOM to settle', { condition: 'fixed-time', timeoutMs: waitMs });
+        }
     }
 
     _handleInput(step) {
-        const selector = step.trigger.selector;
+        const selector = step.trigger?.selector;
+        if (!selector) return;
         const value = step.trigger.value || '';
         const currentIndex = this.workflow.length;
 
@@ -219,21 +270,22 @@ export class WorkflowCompiler {
         if (!scrollData) return;
 
         const currentIndex = this.workflow.length;
-        const deltaY = scrollData.delta?.y || 0;
+        const toY = scrollData.to?.y || 0;
+        const toX = scrollData.to?.x || 0;
 
-        const viewportHeight = step.trigger.viewport?.height || 1000;
-        const percentageY = Math.abs(Math.round((deltaY / viewportHeight) * 100));
+        // No meaningful scroll
+        if (toY === 0 && toX === 0) return;
 
         const params = {
-            mode: 'percentage',
-            percentage: Math.min(percentageY, 100),
-            direction: deltaY > 0 ? 'down' : 'up',
-            behavior: 'smooth'
+            mode: 'scroll-to',
+            x: toX,
+            y: toY,
+            behavior: 'auto'
         };
 
         this.workflow.push({
             type: 'SCROLL',
-            label: `Scroll ${params.direction}`,
+            label: `Scroll to Y=${toY}px`,
             params,
             connections: [{ to: currentIndex + 1, condition: 'success' }]
         });
@@ -241,7 +293,8 @@ export class WorkflowCompiler {
     }
 
     _handleSubmit(step) {
-        const selector = step.trigger.selector;
+        const selector = step.trigger?.selector;
+        if (!selector) return;
         const currentIndex = this.workflow.length;
 
         this.workflow.push({
@@ -269,10 +322,12 @@ export class WorkflowCompiler {
     }
 
     _handleKeydown(step) {
-        const key = step.trigger.key;
+        const key = step.trigger?.key;
+        if (!key) return;
 
         if (key === 'Enter') {
-            const selector = step.trigger.selector;
+            const selector = step.trigger?.selector;
+            if (!selector) return;
             const currentIndex = this.workflow.length;
 
             this.workflow.push({
@@ -288,7 +343,8 @@ export class WorkflowCompiler {
     }
 
     _handleFocus(step) {
-        const selector = step.trigger.selector;
+        const selector = step.trigger?.selector;
+        if (!selector) return;
         const currentIndex = this.workflow.length;
 
         const metadata = step.trigger.metadata || {};
@@ -523,7 +579,7 @@ export class WorkflowCompiler {
      */
     _handleStyleChange(step) {
         const styleChange = step.trigger.styleChange;
-        if (!styleChange) return;
+        if (!styleChange?.selector || !styleChange?.property || styleChange?.value === undefined) return;
 
         this._addSetStyle(
             styleChange.selector,
@@ -550,6 +606,7 @@ export class WorkflowCompiler {
             params: {
                 mode: expandParams.mode || 'scroll-measure',
                 container: expandParams.selector,
+                value: expandParams.value,
                 clearAncestorConstraints: expandParams.clearAncestorConstraints !== false,
                 scrollStep: 100,
                 scrollDelay: 200,
@@ -570,7 +627,7 @@ export class WorkflowCompiler {
      */
     _handleStyleChangesBatch(step) {
         const styleChangesBatch = step.trigger.styleChangesBatch;
-        if (!styleChangesBatch) return;
+        if (!styleChangesBatch?.selector || !styleChangesBatch.styles || typeof styleChangesBatch.styles !== 'object') return;
 
         const { selector, styles, priority } = styleChangesBatch;
 
@@ -691,26 +748,39 @@ export class WorkflowCompiler {
         const groups = [];
         let i = 0;
 
-        while (i < workflow.length - 1) {
-            // Look for CLICK followed by SCREENSHOT
-            if (workflow[i].type !== 'CLICK' || workflow[i + 1].type !== 'SCREENSHOT') {
+        // Skip all consecutive WAIT nodes starting at idx, return index of first non-WAIT node
+        const skipWaits = (idx) => {
+            while (workflow[idx]?.type === 'WAIT') idx++;
+            return idx;
+        };
+
+        while (i < workflow.length) {
+            // Look for CLICK followed by SCREENSHOT (with any number of WAITs in between)
+            if (workflow[i].type !== 'CLICK') {
+                i++;
+                continue;
+            }
+            const firstSsIdx = skipWaits(i + 1);
+            if (workflow[firstSsIdx]?.type !== 'SCREENSHOT') {
                 i++;
                 continue;
             }
 
-            // Collect consecutive CLICK → SCREENSHOT pairs
+            // Collect consecutive CLICK → (WAIT*) → SCREENSHOT pairs
             const pairs = [];
             let j = i;
-            while (j < workflow.length - 1 &&
-                   workflow[j].type === 'CLICK' &&
-                   workflow[j + 1].type === 'SCREENSHOT') {
+            while (j < workflow.length) {
+                if (workflow[j].type !== 'CLICK') break;
+                const ssIdx = skipWaits(j + 1);
+                if (workflow[ssIdx]?.type !== 'SCREENSHOT') break;
+
                 pairs.push({
                     clickIdx: j,
-                    screenshotIdx: j + 1,
+                    screenshotIdx: ssIdx,
                     clickNode: workflow[j],
-                    screenshotNode: workflow[j + 1]
+                    screenshotNode: workflow[ssIdx]
                 });
-                j += 2;
+                j = ssIdx + 1;
             }
 
             // Need at least 2 consecutive pairs to form a loop
@@ -791,17 +861,18 @@ export class WorkflowCompiler {
             return skeleton !== selector ? skeleton : null;
         }
 
-        // XPath: replace quoted string values
+        // XPath: only generate skeleton for POSITIONAL predicates like [1], [2], [3]
+        // Text/value predicates (normalize-space, @aria-label, @name) are unique identifiers —
+        // they cannot be used for positional iteration and must NOT trigger loop optimization.
         if (selector.startsWith('//')) {
-            const skeleton = selector
-                .replace(/='[^']*'/g, "='*'")
-                .replace(/="[^"]*"/g, '="*"');
+            if (!/\[\d+\]/.test(selector)) return null; // no positional index = not a loop candidate
+            const skeleton = selector.replace(/\[\d+\]/g, '[*]');
             return skeleton !== selector ? skeleton : null;
         }
 
-        // text:: selectors all share the same skeleton
+        // text:: selectors are always unique identifiers — never loop candidates
         if (selector.startsWith('text::')) {
-            return 'text::"*"';
+            return null;
         }
 
         return null;
@@ -827,8 +898,18 @@ export class WorkflowCompiler {
                 .trim();
             const clickPathParts = parts.slice(varyingIdx + 1);
 
+            // Reject bare tag names (e.g. "div", "span") - too broad for ELEMENT_SCAN
+            if (this._isBareTagName(itemPart)) return null;
+
+            const rootSelector = rootParts.join(' > ');
+
+            // Require a specific root container — if rootSelector is empty the scan would
+            // cover the entire page and match items from OTHER sections (e.g. two separate
+            // accordion groups both containing ".accordion-item" → wrong scope / "duplicating").
+            if (!rootSelector) return null;
+
             return {
-                rootSelector: rootParts.join(' > ') || 'body',
+                rootSelector,
                 itemSelector: itemPart,
                 clickPath: clickPathParts.length > 0 ? clickPathParts.join(' > ') : ''
             };
@@ -846,14 +927,32 @@ export class WorkflowCompiler {
                 .trim();
             const clickPathParts = parts.slice(varyingIdx + 1);
 
+            // Reject bare tag names - too broad for ELEMENT_SCAN
+            if (this._isBareTagName(itemPart) || !itemPart) return null;
+
+            const rootSelector = rootParts.join(' > ');
+
+            // Same as nth-of-type: require a specific root to avoid cross-section scope
+            if (!rootSelector) return null;
+
             return {
-                rootSelector: rootParts.join(' > ') || 'body',
-                itemSelector: itemPart || '*',
+                rootSelector,
+                itemSelector: itemPart,
                 clickPath: clickPathParts.length > 0 ? clickPathParts.join(' > ') : ''
             };
         }
 
         return null;
+    }
+
+    /**
+     * Check if selector is just a bare tag name without class, id, or attribute qualifiers
+     * e.g. "div", "span", "li" → true; "div.tabs", "li.item" → false
+     * @private
+     */
+    _isBareTagName(selector) {
+        if (!selector) return true;
+        return /^[a-z][a-z0-9]*$/i.test(selector);
     }
 
     /**
@@ -920,5 +1019,59 @@ export class WorkflowCompiler {
             },
             connections: [{ to: 0, condition: 'success' }]
         };
+    }
+
+    /**
+     * Validate compiled workflow for common issues
+     * Logs warnings but does not block compilation
+     * @param {Array} workflow
+     * @private
+     */
+    _validateWorkflow(workflow) {
+        const scanIds = new Set();
+        const forEachSources = [];
+
+        for (let i = 0; i < workflow.length; i++) {
+            const node = workflow[i];
+
+            // Every node must have type
+            if (!node.type) {
+                console.warn(`WorkflowCompiler: Node at index ${i} missing type`);
+            }
+
+            // Non-terminal nodes must have connections
+            if (node.type !== 'OUTPUT' && (!node.connections || node.connections.length === 0)) {
+                console.warn(`WorkflowCompiler: Node ${i} (${node.type}) missing connections`);
+            }
+
+            // Connection indices must be valid
+            if (node.connections) {
+                for (const conn of node.connections) {
+                    if (conn.to < 0 || conn.to >= workflow.length) {
+                        console.warn(`WorkflowCompiler: Node ${i} (${node.type}) connection points to invalid index ${conn.to}`);
+                    }
+                }
+            }
+
+            // Selector-based nodes must have selector
+            if (['CLICK', 'TYPE'].includes(node.type) && !node.params?.selector) {
+                console.warn(`WorkflowCompiler: ${node.type} node at index ${i} missing selector`);
+            }
+
+            // Track ELEMENT_SCAN ids and FOR_EACH sources
+            if (node.type === 'ELEMENT_SCAN' && node.id) {
+                scanIds.add(node.id);
+            }
+            if (node.type === 'FOR_EACH_ELEMENT' && node.params?.source) {
+                forEachSources.push({ index: i, source: node.params.source });
+            }
+        }
+
+        // Validate FOR_EACH sources match ELEMENT_SCAN ids
+        for (const { index, source } of forEachSources) {
+            if (!scanIds.has(source)) {
+                console.warn(`WorkflowCompiler: FOR_EACH at index ${index} references source '${source}' but no ELEMENT_SCAN has that id`);
+            }
+        }
     }
 }

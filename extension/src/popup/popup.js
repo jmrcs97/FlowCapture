@@ -59,6 +59,11 @@ class PopupController {
         this._settings = { ...DEFAULT_SETTINGS };
         this._isRecordingShortcut = false;
         this._shortcutListener = null;
+        this._isRecordingExpandShortcut = false;
+        this._expandShortcutListener = null;
+
+        // Cleanup timer interval when popup window closes
+        window.addEventListener('unload', () => this.timer.stop());
 
         this._init();
     }
@@ -107,14 +112,18 @@ class PopupController {
         this.ui.onStopClick(() => this._handleStop());
         this.ui.onMarkCaptureClick(() => this._handleMarkCapture());
         this.ui.onDownloadFormatClick((format) => this._handleDownload(format));
+        this.ui.onCopyClick(() => this._handleCopy());
+        this.ui.onCopySettingClick(() => this._handleCopy());
 
         // Settings handlers
         this.ui.onSettingsClick(() => this._handleOpenSettings());
         this.ui.onSettingsBackClick(() => this._handleCloseSettings());
         this.ui.onShortcutRecordClick(() => this._handleShortcutRecord());
+        this.ui.onExpandShortcutRecordClick(() => this._handleExpandShortcutRecord());
         this.ui.onExportFormatChange((format) => this._handleSettingChange('defaultExportFormat', format));
         this.ui.onAutoMinimizeChange((val) => this._handleSettingChange('autoMinimizeOverlay', val));
         this.ui.onRecordingIndicatorChange((val) => this._handleSettingChange('showRecordingIndicator', val));
+        this.ui.onManualExpandStepChange((val) => this._handleSettingChange('manualExpandStep', val));
         this.ui.onScreenshotModeChange((mode) => this._handleSettingChange('screenshotMode', mode));
     }
 
@@ -128,6 +137,24 @@ class PopupController {
                 StorageManager.updateEventCount(msg.count).catch(console.error);
             }
         });
+    }
+
+    /**
+     * Auto-inject content script and retry a message
+     * Used when the content script is not yet loaded on the tab
+     * @param {number} tabId
+     * @param {Object} message
+     * @returns {Promise<Object>}
+     */
+    async _injectAndRetry(tabId, message) {
+        this.ui.showToast('Injecting recorder...', 'info', 2000);
+        await chrome.scripting.executeScript({
+            target: { tabId },
+            files: ['src/content/content.js']
+        });
+        // Wait for script to initialize before retrying
+        await new Promise(r => setTimeout(r, 800));
+        return sendTabMessage(tabId, message);
     }
 
     /**
@@ -154,7 +181,18 @@ class PopupController {
             const now = Date.now();
             await StorageManager.setRecordingState(true, now, 0);
 
-            const response = await sendTabMessage(tab.id, { action: MESSAGE_ACTIONS.START_RECORDING });
+            let response;
+            try {
+                response = await sendTabMessage(tab.id, { action: MESSAGE_ACTIONS.START_RECORDING });
+            } catch (err) {
+                // Content script not loaded — try auto-injection then retry
+                if (err.message?.includes('Could not establish connection') ||
+                    err.message?.includes('Receiving end does not exist')) {
+                    response = await this._injectAndRetry(tab.id, { action: MESSAGE_ACTIONS.START_RECORDING });
+                } else {
+                    throw err;
+                }
+            }
 
             if (response?.status === 'started') {
                 this.ui.updateState(true, 0);
@@ -162,14 +200,7 @@ class PopupController {
             }
         } catch (error) {
             console.error('Start recording failed:', error);
-
-            if (error.message?.includes('Could not establish connection') ||
-                error.message?.includes('Receiving end does not exist')) {
-                this.ui.showError('Please refresh the page before recording.');
-            } else {
-                this.ui.showError('Failed to start recording: ' + error.message);
-            }
-
+            this.ui.showError('Failed to start: ' + error.message);
             await StorageManager.setRecordingState(false);
             this.ui.updateState(false);
         }
@@ -241,6 +272,14 @@ class PopupController {
             }
 
             const intent = response.intent;
+
+            // Validate intent structure before proceeding
+            const steps = intent.intent_analysis?.steps;
+            if (!Array.isArray(steps) || steps.length === 0) {
+                this.ui.showError('No steps recorded. Start a recording session first.');
+                return;
+            }
+
             await StorageManager.saveIntentData(intent);
 
             let data, filename, successMsg;
@@ -248,7 +287,7 @@ class PopupController {
             if (format === 'workflow') {
                 // Compile to workflow IR
                 const url = intent.url;
-                const capturedSteps = intent.intent_analysis?.steps || [];
+                const capturedSteps = steps;
 
                 data = DownloadManager.createWorkflow(url, capturedSteps, {
                     screenshotMode: this._settings.screenshotMode
@@ -269,6 +308,50 @@ class PopupController {
         } catch (error) {
             console.error('Download failed:', error);
             this.ui.showError('Failed to download: ' + error.message);
+        }
+    }
+
+    /**
+     * Handle Copy to Clipboard
+     * Specifically copies the Workflow (IR) format as requested
+     */
+    async _handleCopy() {
+        try {
+            const tab = await getActiveTab();
+            if (!tab) return;
+
+            const response = await sendTabMessage(tab.id, { action: MESSAGE_ACTIONS.GET_INTENT });
+
+            if (!response?.intent) {
+                this.ui.showError('No data found to copy.');
+                return;
+            }
+
+            const intent = response.intent;
+            const capturedSteps = intent.intent_analysis?.steps;
+
+            if (!Array.isArray(capturedSteps) || capturedSteps.length === 0) {
+                this.ui.showError('No steps recorded. Start a recording session first.');
+                return;
+            }
+
+            // Specifically copy as workflow as requested
+            const url = intent.url;
+
+            const data = DownloadManager.createWorkflow(url, capturedSteps, {
+                screenshotMode: this._settings.screenshotMode
+            });
+
+            const success = await DownloadManager.copyToClipboard(data);
+            if (success) {
+                this.ui.showSuccess('Workflow copied to clipboard!');
+            } else {
+                this.ui.showError('Failed to copy to clipboard');
+            }
+
+        } catch (error) {
+            console.error('Copy failed:', error);
+            this.ui.showError('Copy failed: ' + error.message);
         }
     }
 
@@ -294,6 +377,16 @@ class PopupController {
             this.ui.updateShortcutDisplay(this._settings.captureShortcut);
             if (this._shortcutListener) {
                 document.removeEventListener('keydown', this._shortcutListener);
+            }
+        }
+
+        // Cancel expand shortcut recording if active
+        if (this._isRecordingExpandShortcut) {
+            this._isRecordingExpandShortcut = false;
+            this.ui.setExpandShortcutRecording(false);
+            this.ui.updateExpandShortcutDisplay(this._settings.expandShortcut);
+            if (this._expandShortcutListener) {
+                document.removeEventListener('keydown', this._expandShortcutListener);
             }
         }
 
@@ -374,6 +467,53 @@ class PopupController {
         };
 
         document.addEventListener('keydown', this._shortcutListener);
+    }
+
+    /**
+     * Handle expand shortcut recorder button click
+     */
+    _handleExpandShortcutRecord() {
+        if (this._isRecordingExpandShortcut) {
+            this._isRecordingExpandShortcut = false;
+            this.ui.setExpandShortcutRecording(false);
+            this.ui.updateExpandShortcutDisplay(this._settings.expandShortcut);
+            if (this._expandShortcutListener) {
+                document.removeEventListener('keydown', this._expandShortcutListener);
+            }
+            return;
+        }
+
+        this._isRecordingExpandShortcut = true;
+        this.ui.setExpandShortcutRecording(true);
+
+        this._expandShortcutListener = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+
+            if (!e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+                this.ui.showError('Use at least one modifier (Ctrl, Shift, Alt)');
+                return;
+            }
+
+            const shortcut = {
+                ctrl: e.ctrlKey,
+                shift: e.shiftKey,
+                alt: e.altKey,
+                meta: e.metaKey,
+                key: e.key.length === 1 ? e.key.toUpperCase() : e.key
+            };
+
+            this._isRecordingExpandShortcut = false;
+            this.ui.setExpandShortcutRecording(false);
+            this.ui.updateExpandShortcutDisplay(shortcut);
+            document.removeEventListener('keydown', this._expandShortcutListener);
+
+            this._handleSettingChange('expandShortcut', shortcut);
+        };
+
+        document.addEventListener('keydown', this._expandShortcutListener);
     }
 }
 

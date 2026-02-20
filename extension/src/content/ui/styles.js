@@ -326,6 +326,33 @@ export class OverlayStyles {
                 50% { opacity: 0.4; }
             }
 
+            /* ─── SHORTCUTS INFO ──────────────────────────────────── */
+            .shortcuts-info {
+                margin: 10px 0;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+            }
+            .shortcut-row {
+                display: flex;
+                justify-content: space-between;
+                font-size: 11px;
+                color: #94a3b8;
+                padding: 0 4px;
+            }
+            .key-combo {
+                font-family: inherit; /* or monospaced could be nice */
+                background: rgba(255, 255, 255, 0.1);
+                padding: 1px 5px;
+                border-radius: 4px;
+                color: #e2e8f0;
+                font-weight: 500;
+                font-size: 10px;
+                display: inline-block;
+                min-width: 60px;
+                text-align: center;
+            }
+
             @media (prefers-reduced-motion: reduce) {
                 .recording-badge .dot,
                 button.loading::after {

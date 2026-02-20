@@ -22,10 +22,7 @@
                 </div>
                 <h1>FlowCapture</h1>
             </div>
-            <button id="settings-btn"
-                    class="btn-icon"
-                    aria-label="Settings"
-                    title="Settings">
+            <button id="settings-btn" class="btn-icon" aria-label="Settings" title="Settings">
                 <span class="material-icons-round" aria-hidden="true">settings</span>
             </button>
         </header>
@@ -54,10 +51,8 @@
                 </div>
 
                 <div style="width: 100%; margin-top: 0.5rem;">
-                    <button id="start-btn"
-                            class="start-btn"
-                            aria-label="Start recording user interactions on current tab"
-                            aria-pressed="false">
+                    <button id="start-btn" class="start-btn"
+                        aria-label="Start recording user interactions on current tab" aria-pressed="false">
                         <span class="material-icons-round" aria-hidden="true">play_circle_filled</span>
                         Start Recording
                     </button>
@@ -65,10 +60,7 @@
             </div>
 
             <!-- RECORDING VIEW -->
-            <div id="state-recording"
-                 role="region"
-                 aria-label="Recording in progress"
-                 aria-busy="false">
+            <div id="state-recording" role="region" aria-label="Recording in progress" aria-busy="false">
 
                 <div class="recording-badge" role="status" aria-label="Recording active">
                     <div class="recording-dot" aria-hidden="true"></div>
@@ -76,11 +68,8 @@
                 </div>
 
                 <div class="timer-section">
-                    <div id="timer"
-                         class="timer-display"
-                         role="timer"
-                         aria-label="Recording duration"
-                         aria-live="off">00:00</div>
+                    <div id="timer" class="timer-display" role="timer" aria-label="Recording duration" aria-live="off">
+                        00:00</div>
                     <span class="timer-label">Session Duration</span>
                 </div>
 
@@ -91,29 +80,23 @@
                         </div>
                         <div class="stats-info">
                             <span class="stats-label">Events Captured</span>
-                            <span id="event-count"
-                                  class="stats-value"
-                                  aria-label="Number of events captured"
-                                  aria-live="polite"
-                                  aria-atomic="true">0</span>
+                            <span id="event-count" class="stats-value" aria-label="Number of events captured"
+                                aria-live="polite" aria-atomic="true">0</span>
                         </div>
                     </div>
                 </div>
 
                 <div class="action-buttons">
-                    <button id="mark-capture-btn"
-                            class="mark-capture-btn"
-                            aria-label="Mark screenshot capture point (Ctrl+Shift+C)"
-                            title="Mark screenshot point (Ctrl+Shift+C)"
-                            disabled>
-                        <span class="material-icons-round" aria-hidden="true" style="font-size: 18px;">photo_camera</span>
+                    <button id="mark-capture-btn" class="mark-capture-btn"
+                        aria-label="Mark screenshot capture point (Ctrl+Shift+C)"
+                        title="Mark screenshot point (Ctrl+Shift+C)" disabled>
+                        <span class="material-icons-round" aria-hidden="true"
+                            style="font-size: 18px;">photo_camera</span>
                         Mark Capture
                         <span class="shortcut-badge">Ctrl+Shift+C</span>
                     </button>
 
-                    <button id="stop-btn"
-                            class="stop-btn"
-                            aria-label="Stop recording">
+                    <button id="stop-btn" class="stop-btn" aria-label="Stop recording">
                         <div class="stop-icon" aria-hidden="true"></div>
                         Stop Recording
                     </button>
@@ -125,8 +108,8 @@
             </div>
 
             <!-- SETTINGS VIEW -->
-            <div id="state-settings" class="settings-view" style="display: none;"
-                 role="region" aria-label="Extension settings">
+            <div id="state-settings" class="settings-view" style="display: none;" role="region"
+                aria-label="Extension settings">
 
                 <div class="settings-header">
                     <button id="settings-back-btn" class="btn-icon" aria-label="Back to main view">
@@ -139,11 +122,24 @@
                     <div class="setting-item">
                         <div class="setting-info">
                             <span class="setting-label">Capture Shortcut</span>
-                            <span class="setting-desc">Keyboard shortcut for Mark Capture</span>
+                            <span class="setting-desc">Press to record a new shortcut</span>
                         </div>
                         <button id="shortcut-btn" class="shortcut-recorder"
-                                aria-label="Click to change capture shortcut">
+                            aria-label="Click to record a new capture shortcut"
+                            title="Click, then press your desired key combination">
                             <span id="shortcut-display">Ctrl+Shift+C</span>
+                        </button>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <span class="setting-label">Expand Shortcut</span>
+                            <span class="setting-desc">Expand element under cursor</span>
+                        </div>
+                        <button id="expand-shortcut-btn" class="shortcut-recorder"
+                            aria-label="Click to record a new expand shortcut"
+                            title="Click, then press your desired key combination">
+                            <span id="expand-shortcut-display">Ctrl+Shift+E</span>
                         </button>
                     </div>
 
@@ -152,11 +148,17 @@
                             <span class="setting-label">Default Export</span>
                             <span class="setting-desc">Format used when downloading</span>
                         </div>
-                        <select id="export-format-select" class="setting-select"
+                        <div class="setting-controls">
+                            <select id="export-format-select" class="setting-select"
                                 aria-label="Select default export format">
-                            <option value="workflow">Workflow (IR)</option>
-                            <option value="intent">Intent (Legacy)</option>
-                        </select>
+                                <option value="workflow">Workflow (IR)</option>
+                                <option value="intent">Intent (Legacy)</option>
+                            </select>
+                            <button id="copy-setting-btn" class="btn-icon-action" title="Copy workflow to clipboard"
+                                aria-label="Copy workflow to clipboard">
+                                <span class="material-icons-round">content_copy</span>
+                            </button>
+                        </div>
                     </div>
 
                     <div class="setting-item setting-item-column">
@@ -165,17 +167,21 @@
                             <span class="setting-desc">How captures are taken</span>
                         </div>
                         <div class="radio-group" id="screenshot-mode-group">
-                            <label class="radio-option">
+                            <label class="radio-option"
+                                title="Expands element height to show all content without scrolling">
                                 <input type="radio" name="screenshotMode" value="dynamic" checked>
                                 <span class="radio-label">Dynamic Height</span>
+                                <span class="radio-hint">Expands to full content</span>
                             </label>
-                            <label class="radio-option">
+                            <label class="radio-option" title="Scrolls page and stitches a full-length screenshot">
                                 <input type="radio" name="screenshotMode" value="fullpage">
                                 <span class="radio-label">Full Page</span>
+                                <span class="radio-hint">Captures entire scrollable page</span>
                             </label>
-                            <label class="radio-option">
+                            <label class="radio-option" title="Captures only the currently visible area">
                                 <input type="radio" name="screenshotMode" value="viewport">
                                 <span class="radio-label">Viewport Only</span>
+                                <span class="radio-hint">Current visible area only</span>
                             </label>
                         </div>
                     </div>
@@ -201,6 +207,18 @@
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
+
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <span class="setting-label">Manual Expand Step</span>
+                            <span class="setting-desc">Pixels per step (default: 50)</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 4px;">
+                            <input type="number" id="manual-expand-step" min="10" max="500" step="10"
+                                style="width: 50px; padding: 4px; border-radius: 4px; border: 1px solid #334155; background: #1e293b; color: white;">
+                            <span style="color: #64748b; font-size: 12px;">px</span>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="settings-footer">
@@ -213,12 +231,8 @@
         <footer>
             <!-- Download Dropdown Menu -->
             <div class="download-menu-container">
-                <button id="download-btn"
-                        class="download-link disabled"
-                        aria-label="Download recorded session data"
-                        aria-disabled="true"
-                        aria-haspopup="menu"
-                        aria-expanded="false">
+                <button id="download-btn" class="download-link disabled" aria-label="Download recorded session data"
+                    aria-disabled="true" aria-haspopup="menu" aria-expanded="false">
                     <span class="material-icons-round" aria-hidden="true">download</span>
                     <span id="download-btn-text">Download Result</span>
                     <span class="material-icons-round dropdown-arrow" aria-hidden="true">expand_more</span>
@@ -238,6 +252,14 @@
                         <div class="dropdown-item-text">
                             <span class="dropdown-item-title">Workflow (IR)</span>
                             <span class="dropdown-item-desc">Executable workflow nodes</span>
+                        </div>
+                    </button>
+                    <div class="dropdown-divider"></div>
+                    <button id="copy-btn" class="dropdown-item" role="menuitem">
+                        <span class="material-icons-round">content_copy</span>
+                        <div class="dropdown-item-text">
+                            <span class="dropdown-item-title">Copy Workflow</span>
+                            <span class="dropdown-item-desc">Copy JSON to clipboard</span>
                         </div>
                     </button>
                 </div>

@@ -106,8 +106,10 @@ export const STORAGE_KEYS = {
 
 export const DEFAULT_SETTINGS = {
     captureShortcut: { ctrl: true, shift: true, key: 'C' },
+    expandShortcut: { ctrl: true, shift: true, key: 'E' },
     defaultExportFormat: 'workflow',
     autoMinimizeOverlay: true,
     showRecordingIndicator: true,
+    manualExpandStep: 50,
     screenshotMode: 'dynamic' // 'dynamic' | 'fullpage' | 'viewport'
 };

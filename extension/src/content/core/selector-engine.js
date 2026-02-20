@@ -31,6 +31,43 @@ export class SelectorEngine {
 
         // Dynamic state classes that change at runtime (break selectors on replay)
         this._stateClassPattern = /^(active|selected|focused|focus|hover|open|opened|closed|collapsed|expanded|disabled|hidden|visible|show|hide|checked|current|is-active|is-open|is-selected|is-visible|is-hidden|is-disabled|is-expanded|is-collapsed|toggled|highlighted|pressed|dragging|loading|loaded|entering|leaving|entered|exited)$/;
+
+        // Interactive HTML tags and ARIA roles (used for ancestor bubbling)
+        this._interactiveTags = new Set(['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY', 'DETAILS']);
+        this._interactiveRoles = new Set(['button', 'link', 'tab', 'checkbox', 'radio', 'menuitem',
+            'option', 'combobox', 'switch', 'menuitemcheckbox', 'menuitemradio', 'treeitem', 'gridcell']);
+    }
+
+    /**
+     * Returns true if el is a natively interactive/clickable element.
+     * @param {Element} el
+     * @returns {boolean}
+     * @private
+     */
+    _isInteractiveElement(el) {
+        if (this._interactiveTags.has(el.tagName)) return true;
+        const role = el.getAttribute('role');
+        if (role && this._interactiveRoles.has(role)) return true;
+        if (el.hasAttribute('onclick') || el.getAttribute('tabindex') === '0') return true;
+        return false;
+    }
+
+    /**
+     * If el is a non-interactive wrapper (e.g. <div> inside <button>),
+     * return the nearest interactive ancestor. Stops at document.body.
+     * This prevents fragile path selectors when clicking presentational wrappers.
+     * @param {Element} el
+     * @returns {Element}
+     * @private
+     */
+    _findInteractiveAncestor(el) {
+        if (this._isInteractiveElement(el)) return el;
+        let current = el.parentElement;
+        while (current && current !== document.body) {
+            if (this._isInteractiveElement(current)) return current;
+            current = current.parentElement;
+        }
+        return el; // No interactive ancestor found — use original element
     }
 
     /**
@@ -63,6 +100,19 @@ export class SelectorEngine {
     getMultipleCandidates(el) {
         if (!el || el.nodeType !== 1) return { primary: null, fallbacks: [] };
 
+        // Skip overlay elements entirely
+        if (el.id === 'flow-capture-overlay-root' || el.closest?.('#flow-capture-overlay-root')) {
+            return { primary: null, fallbacks: [] };
+        }
+
+        // Bubble up to nearest interactive ancestor (e.g. <div> inside <button> → <button>)
+        // This prevents fragile path selectors when clicking presentational wrappers
+        const resolvedEl = this._findInteractiveAncestor(el);
+        if (resolvedEl !== el) {
+            console.debug(`[SelectorEngine] Bubbled from <${el.tagName.toLowerCase()}> to <${resolvedEl.tagName.toLowerCase()}>`);
+            el = resolvedEl;
+        }
+
         const candidates = [];
 
         // Each strategy is wrapped in try/catch for robustness
@@ -74,11 +124,6 @@ export class SelectorEngine {
                 console.warn(`SelectorEngine: Strategy "${strategy}" failed:`, e.message);
             }
         };
-
-        // Skip overlay elements entirely
-        if (el.id === 'flow-capture-overlay-root' || el.closest?.('#flow-capture-overlay-root')) {
-            return { primary: null, fallbacks: [] };
-        }
 
         // Puppeteer-safe selectors first (priority order)
         if (el.id && !this._isBogusValue(el.id)) {
@@ -113,6 +158,9 @@ export class SelectorEngine {
      * @private
      */
     _computeSelector(el) {
+        // Bubble up to nearest interactive ancestor before applying strategies
+        el = this._findInteractiveAncestor(el);
+
         // Strategy 1: ID
         if (el.id && !this._isBogusValue(el.id)) {
             return `#${CSS.escape(el.id)}`;
@@ -211,6 +259,10 @@ export class SelectorEngine {
      */
     _collectXPathPredicates(el) {
         const preds = [];
+
+        // NOTE: aria-expanded / aria-selected / aria-checked etc. are intentionally NOT
+        // added as predicates here — they are runtime state attributes that change at
+        // runtime (e.g. accordion open/close) and would break replay selectors.
 
         const ariaLabel = el.getAttribute('aria-label');
         if (ariaLabel?.trim() && !this._isBogusValue(ariaLabel)) {

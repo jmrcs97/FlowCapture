@@ -114,6 +114,20 @@ export class OverlayUI {
                             title="Ctrl+Shift+C">
                         📸 Mark Capture
                     </button>
+                
+                    <div class="shortcuts-info">
+                        <div class="shortcut-row" title="Expand constrained element">
+                            <span>Expand</span>
+                            <span class="key-combo">Ctrl+Shift+E</span>
+                        </div>
+                        <div class="shortcut-row" title="Adjust expanded height">
+                            <span>Height</span>
+                            <span class="key-combo">Ctrl+Shift+↕</span>
+                        </div>
+                    </div>
+
+                    <div class="divider"></div>
+
                     <button class="btn-danger"
                             id="btn-stop"
                             aria-label="Stop recording">
