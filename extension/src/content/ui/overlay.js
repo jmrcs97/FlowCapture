@@ -84,12 +84,24 @@ export class OverlayUI {
                             aria-label="Start recording user interactions">
                         Start Recording
                     </button>
-                    <button class="btn-success"
-                            id="btn-dl-prev"
-                            style="display:none"
-                            aria-label="Download previously recorded session">
-                        Download Previous
-                    </button>
+                    <div id="export-options" style="display:none">
+                        <div class="export-label" id="export-label">Ready</div>
+                        <button class="btn-export btn-export-workflow"
+                                id="btn-dl-workflow"
+                                aria-label="Download workflow IR">
+                            Download Workflow
+                        </button>
+                        <button class="btn-export btn-export-intent"
+                                id="btn-dl-intent"
+                                aria-label="Download intent JSON">
+                            Download Intent
+                        </button>
+                        <button class="btn-export btn-export-copy"
+                                id="btn-copy-workflow"
+                                aria-label="Copy workflow to clipboard">
+                            Copy Workflow
+                        </button>
+                    </div>
                 </div>
 
                 <div id="rec-view" style="display:none" role="status" aria-live="polite">
@@ -315,22 +327,53 @@ export class OverlayUI {
     }
 
     /**
-     * Show download button after recording
+     * Show export options after recording (matches popup dropdown)
      * @param {number} count - Step count
      */
-    showDownloadButton(count) {
-        const dlBtn = this.shadow.querySelector('#btn-dl-prev');
-        if (!dlBtn) return;
+    async showDownloadButton(count) {
+        const exportOptions = this.shadow.querySelector('#export-options');
+        if (!exportOptions) return;
 
-        dlBtn.style.display = 'block';
-        dlBtn.textContent = `Download (${count} steps)`;
-        dlBtn.setAttribute('aria-label', `Download ${count} recorded steps`);
-        dlBtn.onclick = () => {
-            const steps = this.stateManager.getSteps();
-            const intent = DownloadManager.createIntent(window.location.href, steps);
-            DownloadManager.downloadJSON(intent);
-            this.showToast('Downloaded!', 'success');
-        };
+        exportOptions.style.display = 'block';
+
+        const label = this.shadow.querySelector('#export-label');
+        if (label) label.textContent = `${count} steps recorded`;
+
+        const settings = await StorageManager.getSettings();
+        const screenshotMode = settings.screenshotMode || 'dynamic';
+
+        // Download Workflow IR
+        const dlWorkflow = this.shadow.querySelector('#btn-dl-workflow');
+        if (dlWorkflow) {
+            dlWorkflow.onclick = () => {
+                const steps = this.stateManager.getSteps();
+                const workflow = DownloadManager.createWorkflow(window.location.href, steps, { screenshotMode });
+                DownloadManager.downloadJSON(workflow, 'workflow_ir.json');
+                this.showToast('Workflow downloaded!', 'success');
+            };
+        }
+
+        // Download Intent (legacy)
+        const dlIntent = this.shadow.querySelector('#btn-dl-intent');
+        if (dlIntent) {
+            dlIntent.onclick = () => {
+                const steps = this.stateManager.getSteps();
+                const intent = DownloadManager.createIntent(window.location.href, steps);
+                DownloadManager.downloadJSON(intent, 'flow_capture_intent.json');
+                this.showToast('Intent downloaded!', 'success');
+            };
+        }
+
+        // Copy Workflow to clipboard
+        const copyBtn = this.shadow.querySelector('#btn-copy-workflow');
+        if (copyBtn) {
+            copyBtn.onclick = async () => {
+                const steps = this.stateManager.getSteps();
+                const workflow = DownloadManager.createWorkflow(window.location.href, steps, { screenshotMode });
+                const success = await DownloadManager.copyToClipboard(workflow);
+                this.showToast(success ? 'Copied to clipboard!' : 'Copy failed', success ? 'success' : 'error');
+            };
+        }
     }
 
     /**

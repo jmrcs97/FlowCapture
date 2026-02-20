@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test: Accordion Selectors</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .accordion-item {
+            margin-bottom: 10px;
+            background: white;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .accordion-button {
+            width: 100%;
+            padding: 15px 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            text-align: left;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+        }
+        .accordion-button:hover {
+            background: #0056b3;
+        }
+        .accordion-button.collapsed {
+            background: #6c757d;
+        }
+        .accordion-body {
+            padding: 20px;
+            background: #f8f9fa;
+            display: none;
+        }
+        .accordion-body.show {
+            display: block;
+        }
+        .test-results {
+            background: #e9ecef;
+            padding: 20px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .selector-good {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .selector-bad {
+            color: #dc3545;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test: Accordion Selector Engine</h1>
+
+    <div class="test-results" id="results">
+Instruções:
+1. Recarregue a extensão FlowCapture
+2. Clique em cada botão de accordion abaixo
+3. Veja os seletores gerados no console e aqui
+4. Selectors devem ser baseados em TEXTO, não nth-of-type
+    </div>
+
+    <h2>Accordions de Teste</h2>
+
+    <div class="accordion">
+        <div class="accordion-item">
+            <button type="button" aria-expanded="true" class="accordion-button" onclick="toggleAccordion(this)">
+                <p class="mb-0">What is TREMFYA withMe?</p>
+            </button>
+            <div class="accordion-body show">
+                <p>Whether you need help understanding how to get your prescription filled...</p>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <button type="button" aria-expanded="false" class="accordion-button collapsed" onclick="toggleAccordion(this)">
+                <p class="mb-0">Am I eligible and how much does it cost to join TREMFYA withMe?</p>
+            </button>
+            <div class="accordion-body">
+                <p>If you have been prescribed TREMFYA...</p>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <button type="button" aria-expanded="false" class="accordion-button collapsed" onclick="toggleAccordion(this)">
+                <p class="mb-0">What should I expect after enrollment?</p>
+            </button>
+            <div class="accordion-body">
+                <p>Once enrolled, your Nurse Guide will call you...</p>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <button type="button" aria-expanded="false" class="accordion-button collapsed" onclick="toggleAccordion(this)">
+                <p class="mb-0">What support do Nurse Guides offer?</p>
+            </button>
+            <div class="accordion-body">
+                <p>Your Nurse Guide is a registered nurse...</p>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <button type="button" aria-expanded="false" class="accordion-button collapsed" onclick="toggleAccordion(this)">
+                <p class="mb-0">What cost support options are available to me?</p>
+            </button>
+            <div class="accordion-body">
+                <p>With the TREMFYA withMe Savings Program...</p>
+            </div>
+        </div>
+    </div>
+
+    <h2>✅ Seletores Esperados (BONS)</h2>
+    <pre style="background: #e6ffe6; padding: 10px; border-left: 4px solid #28a745;">
+// XPath baseado em texto (MELHOR):
+//button[contains(., 'What is TREMFYA')]
+//button[contains(., 'Am I eligible')]
+//button[contains(., 'What should I expect')]
+
+// Ou ARIA (se tiver aria-label):
+aria/What is TREMFYA withMe?
+
+// Ou seletor de texto do Puppeteer:
+text::"What is TREMFYA withMe?"
+    </pre>
+
+    <h2>❌ Seletores Ruins (EVITAR)</h2>
+    <pre style="background: #ffe6e6; padding: 10px; border-left: 4px solid #dc3545;">
+// nth-of-type (FRÁGIL - quebra quando DOM muda):
+.accordion-item:nth-of-type(1) > button
+.accordion-item:nth-of-type(2) > button
+
+// Apenas classe (AMBÍGUO - tem múltiplos):
+.accordion-button
+    </pre>
+
+    <script>
+        function toggleAccordion(button) {
+            const item = button.closest('.accordion-item');
+            const body = item.querySelector('.accordion-body');
+            const isExpanded = button.getAttribute('aria-expanded') === 'true';
+
+            // Toggle state
+            button.setAttribute('aria-expanded', !isExpanded);
+            button.classList.toggle('collapsed');
+            body.classList.toggle('show');
+
+            // Test selector engine if FlowCapture is loaded
+            if (window.flowCapture?.selectorEngine) {
+                const selector = window.flowCapture.selectorEngine.computeSelector(button);
+                const candidates = window.flowCapture.selectorEngine.getMultipleCandidates(button, 5);
+
+                console.log('========================================');
+                console.log('🎯 ACCORDION BUTTON CLICKED');
+                console.log('Text:', button.textContent.trim());
+                console.log('Selector gerado:', selector);
+                console.log('Candidatos:', candidates);
+
+                // Analyze selector quality
+                let quality = 'UNKNOWN';
+                let color = '#666';
+
+                if (selector.includes('nth-of-type') || selector.includes('nth-child')) {
+                    quality = '❌ FRÁGIL (usa nth-of-type)';
+                    color = '#dc3545';
+                } else if (selector.startsWith('//') || selector.startsWith('aria/') || selector.startsWith('text::')) {
+                    quality = '✅ ROBUSTO (baseado em conteúdo)';
+                    color = '#28a745';
+                } else if (selector.includes('[data-')) {
+                    quality = '✅ BOM (data attribute)';
+                    color = '#28a745';
+                } else {
+                    quality = '⚠️ VERIFICAR (pode ser ambíguo)';
+                    color = '#ffc107';
+                }
+
+                console.log('Qualidade:', quality);
+                console.log('========================================');
+
+                // Display in UI
+                const results = document.getElementById('results');
+                results.innerHTML = `
+<strong style="color: ${color}">Último seletor gerado:</strong>
+${selector}
+
+<strong>Qualidade:</strong> ${quality}
+
+<strong>Texto do botão:</strong>
+"${button.textContent.trim()}"
+
+<strong>Estratégia usada:</strong>
+${candidates[0]?.strategy || 'unknown'}
+
+<strong>Candidatos alternativos:</strong>
+${candidates.map(c => `  ${c.strategy}: ${c.selector}`).join('\n')}
+
+Veja console (F12) para detalhes completos.
+                `.trim();
+            } else {
+                console.error('❌ FlowCapture não está carregado!');
+                document.getElementById('results').innerHTML = `
+❌ ERRO: FlowCapture não detectado!
+
+Certifique-se de:
+1. Extensão está instalada e ativada
+2. Extensão foi recarregada recentemente
+3. Esta página foi recarregada após ativar a extensão
+
+Recarregue esta página e tente novamente.
+                `.trim();
+            }
+        }
+
+        // Auto-test on page load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                if (window.flowCapture?.selectorEngine) {
+                    document.getElementById('results').innerHTML = `
+✅ FlowCapture detectado!
+
+Clique nos botões de accordion acima para testar os seletores.
+
+O console (F12) mostrará os seletores gerados.
+                    `.trim();
+                } else {
+                    document.getElementById('results').innerHTML = `
+⚠️ FlowCapture não detectado ainda.
+
+Aguardando... (a extensão pode levar alguns segundos para carregar)
+
+Se não aparecer em 5 segundos:
+1. Vá para chrome://extensions
+2. Recarregue a extensão FlowCapture
+3. Recarregue ESTA página
+                    `.trim();
+                }
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

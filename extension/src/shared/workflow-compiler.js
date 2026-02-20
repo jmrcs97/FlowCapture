@@ -59,7 +59,9 @@ export class WorkflowCompiler {
     /**
      * Compute how long to wait before a screenshot step, based on:
      * - Visual settling time of the previous step (measured by LayoutStabilizer)
-     * - Actual time the user paused between interactions (60% of real delta, capped at 4s)
+     * - Actual time the user paused between interactions
+     * For capture_point/checkpoint: 90% of real delta (user waited for animation)
+     * For other triggers: 60% of real delta (navigational pauses)
      * @private
      */
     _computeInterStepWait(step, index, allSteps) {
@@ -72,8 +74,13 @@ export class WorkflowCompiler {
         // Minimum = measured settling time of the previous step
         const prevSettlingMs = prev.visual_settling?.total_ms || 0;
 
-        // Scale inter-step time: 60% of user's actual pause, capped at 4000ms
-        const scaledPause = interStepMs > 800 ? Math.min(Math.round(interStepMs * 0.6), 4000) : 0;
+        // For capture points, the user intentionally waited for the page to be ready.
+        // Preserve 90% of their actual wait time so animations complete during playback.
+        // For other events (clicks, scrolls), 60% is enough since those are navigational pauses.
+        const isCaptureWait = step.trigger?.type === 'capture_point' || step.trigger?.type === 'checkpoint';
+        const scaleFactor = isCaptureWait ? 0.9 : 0.6;
+        const cap = isCaptureWait ? 8000 : 4000;
+        const scaledPause = interStepMs > 800 ? Math.min(Math.round(interStepMs * scaleFactor), cap) : 0;
 
         const wait = Math.max(prevSettlingMs, scaledPause);
         return wait > 250 ? Math.round(wait) : 0;

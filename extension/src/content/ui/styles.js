@@ -359,6 +359,63 @@ export class OverlayStyles {
                     animation: none;
                 }
             }
+
+            /* ─── EXPORT OPTIONS (post-recording) ────────────────── */
+            #export-options {
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+            }
+
+            .export-label {
+                font-size: 12px;
+                color: #22c55e;
+                font-weight: 600;
+                text-align: center;
+                margin-bottom: 4px;
+            }
+
+            .btn-export {
+                width: 100%;
+                padding: 8px 12px;
+                border-radius: 6px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                cursor: pointer;
+                font-weight: 500;
+                font-size: 12px;
+                transition: all 0.15s ease;
+                outline: none;
+                font-family: inherit;
+                text-align: left;
+            }
+
+            .btn-export-workflow {
+                background: rgba(59, 130, 246, 0.15);
+                color: #60a5fa;
+                border-color: rgba(59, 130, 246, 0.3);
+            }
+            .btn-export-workflow:hover {
+                background: rgba(59, 130, 246, 0.25);
+            }
+
+            .btn-export-intent {
+                background: rgba(255, 255, 255, 0.05);
+                color: #94a3b8;
+                border-color: rgba(255, 255, 255, 0.08);
+            }
+            .btn-export-intent:hover {
+                background: rgba(255, 255, 255, 0.1);
+                color: #cbd5e1;
+            }
+
+            .btn-export-copy {
+                background: rgba(168, 85, 247, 0.15);
+                color: #a78bfa;
+                border-color: rgba(168, 85, 247, 0.3);
+            }
+            .btn-export-copy:hover {
+                background: rgba(168, 85, 247, 0.25);
+            }
         `;
     }
 }
