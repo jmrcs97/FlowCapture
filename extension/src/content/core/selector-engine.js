@@ -86,7 +86,7 @@ export class SelectorEngine {
 
         // Bubble up to nearest interactive ancestor (e.g. <div> inside <button> → <button>)
         // This prevents fragile path selectors when clicking presentational wrappers
-        const resolvedEl = this.INTERACTIVE_ELEMENTS.findInteractiveAncestor(el);
+        const resolvedEl = INTERACTIVE_ELEMENTS.findInteractiveAncestor(el);
         if (resolvedEl !== el) {
             console.debug(`[SelectorEngine] Bubbled from <${el.tagName.toLowerCase()}> to <${resolvedEl.tagName.toLowerCase()}>`);
             el = resolvedEl;
@@ -138,7 +138,7 @@ export class SelectorEngine {
      */
     _computeSelector(el) {
         // Bubble up to nearest interactive ancestor before applying strategies
-        el = this.INTERACTIVE_ELEMENTS.findInteractiveAncestor(el);
+        el = INTERACTIVE_ELEMENTS.findInteractiveAncestor(el);
 
         // Strategy 1: ID (only if truly unique on page)
         if (el.id && !this._isBogusValue(el.id) && this._isIdUnique(el.id)) {

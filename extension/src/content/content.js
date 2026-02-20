@@ -83,6 +83,7 @@ if (window.hasFlowCapture) {
 
                 this.MESSAGE_ACTIONS = MESSAGE_ACTIONS;
                 this.CONFIG = CONFIG;
+                this.ShortcutMatcher = ShortcutMatcher;
 
                 // Initialize core modules
                 this.selectorEngine = new SelectorEngine();
@@ -206,24 +207,24 @@ if (window.hasFlowCapture) {
                 if (!this.stateManager.isRecording) return;
                 try {
                     // Capture shortcut (configurable via Settings)
-                    if (ShortcutMatcher.isCapture(e, this.captureShortcut)) {
+                    if (this.ShortcutMatcher.isCapture(e, this.captureShortcut)) {
                         e.preventDefault();
                         this._triggerMarkCapture();
                         return;
                     }
 
                     // Expand shortcut
-                    if (ShortcutMatcher.isExpand(e, this.expandShortcut)) {
+                    if (this.ShortcutMatcher.isExpand(e, this.expandShortcut)) {
                         e.preventDefault();
                         this._triggerExpandUnderCursor();
                         return;
                     }
 
                     // Manual height adjustment (Ctrl+Shift+Up/Down)
-                    if (ShortcutMatcher.isHeightAdjustment(e)) {
+                    if (this.ShortcutMatcher.isHeightAdjustment(e)) {
                         e.preventDefault();
                         e.stopPropagation();
-                        const delta = ShortcutMatcher.getHeightDelta(e, this.manualExpandStep || 50);
+                        const delta = this.ShortcutMatcher.getHeightDelta(e, this.manualExpandStep || 50);
                         this._adjustExpandedHeight(delta);
                         return;
                     }

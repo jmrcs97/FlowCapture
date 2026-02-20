@@ -31,6 +31,7 @@
                 "src/shared/*.js",
                 "src/content/core/*.js",
                 "src/content/ui/*.js",
+                "src/content/services/*.js",
                 "src/content/helpers/*.js"
             ],
             "matches": [
