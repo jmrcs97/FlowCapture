@@ -39,6 +39,21 @@ export class SelectorEngine {
     }
 
     /**
+     * Check if an ID is truly unique on the page.
+     * Many sites reuse IDs (e.g., two tab containers with same ID).
+     * @param {string} id
+     * @returns {boolean}
+     * @private
+     */
+    _isIdUnique(id) {
+        try {
+            return document.querySelectorAll(`#${CSS.escape(id)}`).length === 1;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
      * Returns true if el is a natively interactive/clickable element.
      * @param {Element} el
      * @returns {boolean}
@@ -126,7 +141,7 @@ export class SelectorEngine {
         };
 
         // Puppeteer-safe selectors first (priority order)
-        if (el.id && !this._isBogusValue(el.id)) {
+        if (el.id && !this._isBogusValue(el.id) && this._isIdUnique(el.id)) {
             candidates.push({ selector: `#${CSS.escape(el.id)}`, strategy: 'id' });
         }
 
@@ -161,8 +176,8 @@ export class SelectorEngine {
         // Bubble up to nearest interactive ancestor before applying strategies
         el = this._findInteractiveAncestor(el);
 
-        // Strategy 1: ID
-        if (el.id && !this._isBogusValue(el.id)) {
+        // Strategy 1: ID (only if truly unique on page)
+        if (el.id && !this._isBogusValue(el.id) && this._isIdUnique(el.id)) {
             return `#${CSS.escape(el.id)}`;
         }
 
@@ -329,7 +344,7 @@ export class SelectorEngine {
         while (ancestor && ancestor !== document.body && depth < 4) {
             let ancestorExpr = null;
 
-            if (ancestor.id && !this._isBogusValue(ancestor.id)) {
+            if (ancestor.id && !this._isBogusValue(ancestor.id) && this._isIdUnique(ancestor.id)) {
                 ancestorExpr = `//*[@id=${this._xq(ancestor.id)}]`;
             } else {
                 const bestClass = this._getBestClass(ancestor);
@@ -660,8 +675,8 @@ export class SelectorEngine {
         while (current && current.nodeType === 1 && current !== document.body && depth < maxDepth) {
             let part = null;
 
-            // Use ID if available
-            if (current.id && !this._isBogusValue(current.id)) {
+            // Use ID if available and truly unique on page
+            if (current.id && !this._isBogusValue(current.id) && this._isIdUnique(current.id)) {
                 parts.unshift(`#${CSS.escape(current.id)}`);
                 break; // ID is unique anchor
             }
@@ -674,12 +689,26 @@ export class SelectorEngine {
                 part = current.tagName.toLowerCase();
             }
 
-            // Add nth-of-type if there are siblings of same type
+            // Disambiguate among siblings of same type
             if (current.parentElement) {
-                const sameTagSiblings = current.parentElement.querySelectorAll(`:scope > ${current.tagName.toLowerCase()}`);
+                const tag = current.tagName.toLowerCase();
+                const sameTagSiblings = current.parentElement.querySelectorAll(`:scope > ${tag}`);
                 if (sameTagSiblings.length > 1) {
-                    const index = Array.from(sameTagSiblings).indexOf(current) + 1;
-                    part += `:nth-of-type(${index})`;
+                    // Prefer class-based disambiguation over positional nth-of-type
+                    // (nth-of-type breaks in carousels/sliders that reorder children)
+                    let disambiguated = false;
+                    if (bestClass) {
+                        const classSelector = `:scope > ${tag}.${bestClass}`;
+                        try {
+                            if (current.parentElement.querySelectorAll(classSelector).length === 1) {
+                                disambiguated = true; // class already unique among siblings
+                            }
+                        } catch { /* invalid selector */ }
+                    }
+                    if (!disambiguated) {
+                        const index = Array.from(sameTagSiblings).indexOf(current) + 1;
+                        part += `:nth-of-type(${index})`;
+                    }
                 }
             }
 
@@ -713,21 +742,35 @@ export class SelectorEngine {
             sibling = sibling.previousElementSibling;
         }
 
-        // Try to add parent context
+        // Try to add parent context (validate uniqueness — duplicate parent classes exist)
         const parent = el.parentElement;
         if (parent && parent !== document.body) {
+            // Try parent ID first (if unique)
+            if (parent.id && !this._isBogusValue(parent.id) && this._isIdUnique(parent.id)) {
+                const sel = `#${CSS.escape(parent.id)} > ${tag}:nth-of-type(${index})`;
+                if (this._isUniqueSafe(sel)) return sel;
+            }
+
             const parentClass = this._getBestClass(parent);
             if (parentClass) {
-                return `.${parentClass} > ${tag}:nth-of-type(${index})`;
+                const sel = `.${parentClass} > ${tag}:nth-of-type(${index})`;
+                if (this._isUniqueSafe(sel)) return sel;
             }
 
             // Try grandparent
             const grandparent = parent.parentElement;
             if (grandparent) {
+                if (grandparent.id && !this._isBogusValue(grandparent.id) && this._isIdUnique(grandparent.id)) {
+                    const parentTag = parent.tagName.toLowerCase();
+                    const sel = `#${CSS.escape(grandparent.id)} > ${parentTag} > ${tag}:nth-of-type(${index})`;
+                    if (this._isUniqueSafe(sel)) return sel;
+                }
+
                 const gpClass = this._getBestClass(grandparent);
                 if (gpClass) {
                     const parentTag = parent.tagName.toLowerCase();
-                    return `.${gpClass} > ${parentTag} > ${tag}:nth-of-type(${index})`;
+                    const sel = `.${gpClass} > ${parentTag} > ${tag}:nth-of-type(${index})`;
+                    if (this._isUniqueSafe(sel)) return sel;
                 }
             }
         }
