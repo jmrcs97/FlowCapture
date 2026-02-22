@@ -42,10 +42,20 @@ export class ExpansionManager {
             // Check if element has pixel height
             if (heightValue && heightValue !== 'auto' && heightValue.endsWith('px')) {
                 const hasClass = el.className && typeof el.className === 'string' && el.className.trim();
+                const hasScroll = cs.overflow === 'auto' || cs.overflow === 'scroll' ||
+                                  cs.overflowY === 'auto' || cs.overflowY === 'scroll';
+                const scrollHeight = el.scrollHeight;
+                const clientHeight = el.clientHeight;
+                const hasScrollbar = scrollHeight > clientHeight + 1; // Has content overflow
+
                 candidates.push({
                     element: el,
                     height: heightValue,
                     hasClass,
+                    hasScroll,
+                    hasScrollbar,
+                    scrollHeight,
+                    clientHeight,
                     className: el.className || el.tagName
                 });
             }
@@ -53,8 +63,24 @@ export class ExpansionManager {
             el = el.parentElement;
         }
 
-        // Return the FIRST candidate (closest to startEl, deepest in tree)
+        // Prioritize elements with scrollbars (overflow content)
+        // These are the most likely candidates for expansion
         if (candidates.length > 0) {
+            // First try: element with overflow:auto/scroll AND actual scrollbar
+            const scrollable = candidates.find(c => c.hasScroll && c.hasScrollbar);
+            if (scrollable) {
+                console.log(`📦 Found scrollable container: ${scrollable.className} (${scrollable.height}, scroll: ${scrollable.scrollHeight}px)`);
+                return scrollable.element;
+            }
+
+            // Second try: any element with overflow:auto/scroll (even without scrollbar yet)
+            const overflowElement = candidates.find(c => c.hasScroll);
+            if (overflowElement) {
+                console.log(`📦 Found overflow container: ${overflowElement.className} (${overflowElement.height})`);
+                return overflowElement.element;
+            }
+
+            // Fallback: closest element with fixed height (original behavior)
             const chosen = candidates[0];
             console.log(`📦 Found innermost element with fixed height: ${chosen.className} (${chosen.height})`);
             console.log(`   Total candidates: ${candidates.length}, chose closest to cursor`);
@@ -254,7 +280,19 @@ export class ExpansionManager {
         this._lastExpandedElement = container;
 
         // Record as expand event
-        const selector = this.selectorEngine.getUniqueSelector(container);
+        const { primary, fallbacks } = this.selectorEngine.getMultipleCandidates(container);
+        const selector = primary || this.selectorEngine.getUniqueSelector(container);
+
+        // Debug logging
+        console.log(`🎯 EXPAND Target:`, {
+            element: container,
+            tagName: container.tagName,
+            className: container.className,
+            id: container.id,
+            selector: selector,
+            fallbackCount: fallbacks?.length || 0
+        });
+
         this.sessionManager.startSession({
             type: 'expand',
             target: container,

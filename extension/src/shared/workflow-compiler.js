@@ -193,10 +193,21 @@ export class WorkflowCompiler {
     }
 
     _addStartNode(url) {
+        // Include viewport params in START to ensure correct DOM rendering
+        // Mobile sites render different DOM based on initial viewport width
+        const viewportWidth = this.viewportPreset === 'mobile' ? 375 : 1440;
+        const viewportHeight = this.viewportPreset === 'mobile' ? 667 : 900;
+        const devicePixelRatio = 2; // Retina/high-DPI for crisp screenshots
+
         this.workflow.push({
             type: 'START',
             label: 'Start',
-            params: { url },
+            params: {
+                url,
+                viewportWidth,
+                viewportHeight,
+                devicePixelRatio
+            },
             connections: [{ to: 1, condition: 'success' }]
         });
         this.nodeIdCounter++;
@@ -714,21 +725,37 @@ export class WorkflowCompiler {
 
         const currentIndex = this.workflow.length;
 
+        const params = {
+            mode: expandParams.mode || 'scroll-measure',
+            container: container,
+            value: expandParams.value,
+            clearAncestorConstraints: expandParams.clearAncestorConstraints !== false,
+            scrollStep: 100,
+            scrollDelay: 200,
+            keepScrollbar: true,
+            resetScroll: true,
+            useHeightOffset: true,
+            heightOffset: -10
+        };
+
+        // Include fallback selectors for robustness (desktop → mobile compatibility)
+        const fallbacks = step.trigger?.selectorFallbacks;
+        console.log(`📋 EXPAND fallbacks from step:`, {
+            available: fallbacks?.length || 0,
+            raw: fallbacks?.slice(0, 3)
+        });
+        if (fallbacks && fallbacks.length > 0) {
+            const validFallbacks = this._filterBadFallbacks(fallbacks);
+            console.log(`   ✅ Valid fallbacks after filtering:`, validFallbacks.length);
+            if (validFallbacks.length > 0) {
+                params.containerFallbacks = validFallbacks;
+            }
+        }
+
         this.workflow.push({
             type: 'EXPAND',
             label: `Expand ${this._getReadableSelector(container)}`,
-            params: {
-                mode: expandParams.mode || 'scroll-measure',
-                container: container,
-                value: expandParams.value,
-                clearAncestorConstraints: expandParams.clearAncestorConstraints !== false,
-                scrollStep: 100,
-                scrollDelay: 200,
-                keepScrollbar: true,
-                resetScroll: true,
-                useHeightOffset: true,
-                heightOffset: -10
-            },
+            params,
             connections: [{ to: currentIndex + 1, condition: 'success' }]
         });
         this.nodeIdCounter++;

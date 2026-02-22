@@ -113,7 +113,8 @@ export class SelectorEngine {
         tryAdd(() => this._getAriaSelector(el), 'aria');
         tryAdd(() => this._getAttributeSelector(el), 'attribute');
         tryAdd(() => this._getClassSelector(el), 'class');
-        tryAdd(() => this._getPathSelector(el, 4), 'path');
+        tryAdd(() => this._getPathSelector(el, 4), 'path'); // Full hierarchy
+        tryAdd(() => this._getPathSelector(el, 2), 'path-short'); // Shorter fallback (mobile-safe)
         tryAdd(() => this._getNthWithContext(el), 'nth-of-type');
 
         // Text-based selectors as fallbacks only
