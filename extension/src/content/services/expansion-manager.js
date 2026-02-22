@@ -25,37 +25,100 @@ export class ExpansionManager {
     }
 
     /**
-     * Find nearest constrained container (scrollHeight > clientHeight)
+     * Find the INNERMOST element with fixed height (closest to startEl)
+     * Strategy: Find the last child with height:Npx before reaching startEl
      * @param {Element} startEl
      * @returns {Element|null}
      */
     findConstrainedContainer(startEl) {
+        // Collect all ancestors with fixed height (pixel values)
+        const candidates = [];
         let el = startEl;
-        const threshold = 5;
 
         while (el && el !== document.documentElement && el !== document.body) {
-            if (el.scrollHeight > el.clientHeight + threshold) {
-                const cs = getComputedStyle(el);
-                const hasFixedHeight = cs.height !== 'auto' && cs.height !== '';
-                const hasMaxHeight = cs.maxHeight !== 'none' && cs.maxHeight !== '';
-                const hasOverflowClip = cs.overflow === 'hidden' || cs.overflowY === 'hidden'
-                    || cs.overflow === 'auto' || cs.overflowY === 'auto'
-                    || cs.overflow === 'scroll' || cs.overflowY === 'scroll';
+            const cs = getComputedStyle(el);
+            const heightValue = cs.height;
 
-                if (hasFixedHeight || hasMaxHeight || hasOverflowClip) {
-                    return el;
-                }
+            // Check if element has pixel height
+            if (heightValue && heightValue !== 'auto' && heightValue.endsWith('px')) {
+                const hasClass = el.className && typeof el.className === 'string' && el.className.trim();
+                candidates.push({
+                    element: el,
+                    height: heightValue,
+                    hasClass,
+                    className: el.className || el.tagName
+                });
             }
+
             el = el.parentElement;
         }
 
-        // Fallback: startEl itself if it has fixed height or max-height
-        const cs = getComputedStyle(startEl);
-        if (cs.height !== 'auto' || cs.maxHeight !== 'none') {
-            return startEl;
+        // Return the FIRST candidate (closest to startEl, deepest in tree)
+        if (candidates.length > 0) {
+            const chosen = candidates[0];
+            console.log(`📦 Found innermost element with fixed height: ${chosen.className} (${chosen.height})`);
+            console.log(`   Total candidates: ${candidates.length}, chose closest to cursor`);
+            return chosen.element;
         }
 
-        return null;
+        // Fallback: semantic container search
+        el = startEl;
+        let depth = 0;
+        const maxDepth = 15;
+
+        while (el && el !== document.documentElement && el !== document.body && depth < maxDepth) {
+            if (this._isSemanticContainer(el)) {
+                console.log(`📦 Fallback: Found semantic container: ${el.className || el.tagName}`);
+                return el;
+            }
+            el = el.parentElement;
+            depth++;
+        }
+
+        // Last resort: startEl itself
+        console.log(`📦 Last resort: Using startEl: ${startEl.className || startEl.tagName}`);
+        return startEl;
+    }
+
+    /**
+     * Check if element is a semantic container (modal, accordion, dialog, etc.)
+     * @private
+     */
+    _isSemanticContainer(el) {
+        // ARIA roles
+        const role = el.getAttribute('role');
+        if (role && /^(dialog|alertdialog|region|tabpanel|group)$/.test(role)) {
+            return true;
+        }
+
+        // Common semantic class patterns
+        const className = el.className || '';
+        if (typeof className === 'string') {
+            const semanticPatterns = [
+                /modal-(body|content|dialog)/i,
+                /dialog-(body|content)/i,
+                /accordion-(body|content|collapse|panel)/i,
+                /drawer-(body|content)/i,
+                /popover-(body|content)/i,
+                /dropdown-menu/i,
+                /panel-(body|content)/i,
+                /card-body/i,
+                /tab-(pane|content)/i,
+                /carousel-inner/i,
+                /slick-list/i,         // slick-list = viewport (expand target)
+                /slick-slider/i         // slick-slider = wrapper (NOT slick-track which is inner)
+            ];
+            if (semanticPatterns.some(pattern => pattern.test(className))) {
+                return true;
+            }
+        }
+
+        // Bootstrap/common component detection via data attributes
+        if (el.hasAttribute('data-bs-target') || el.hasAttribute('data-toggle')) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -74,24 +137,25 @@ export class ExpansionManager {
             ancestors: []
         };
 
-        // Expand the container
+        // Expand the container to its scroll height
         const targetHeight = container.scrollHeight;
         container.style.setProperty('height', `${targetHeight}px`, 'important');
         container.style.setProperty('max-height', 'none', 'important');
         container.style.setProperty('overflow', 'visible', 'important');
 
-        // Walk up ancestors and clear height/max-height/overflow constraints
+        // Walk up ancestors and adjust height constraints
         let ancestor = container.parentElement;
         let depth = 0;
         const maxDepth = 10;
 
         while (ancestor && ancestor !== document.documentElement && depth < maxDepth) {
             const cs = getComputedStyle(ancestor);
-            const needsClear = (
-                (cs.height !== 'auto' && cs.height !== '') ||
-                (cs.maxHeight !== 'none' && cs.maxHeight !== '') ||
-                cs.overflow === 'hidden' || cs.overflowY === 'hidden'
-            );
+            const heightValue = cs.height;
+            const hasPixelHeight = heightValue && heightValue !== 'auto' && heightValue.endsWith('px');
+            const hasMaxHeight = cs.maxHeight !== 'none' && cs.maxHeight !== '';
+            const hasOverflowClip = cs.overflow === 'hidden' || cs.overflowY === 'hidden';
+
+            const needsClear = hasPixelHeight || hasMaxHeight || hasOverflowClip;
 
             if (needsClear) {
                 originalStyles.ancestors.push({
@@ -102,9 +166,19 @@ export class ExpansionManager {
                     overflowY: ancestor.style.overflowY
                 });
 
-                ancestor.style.setProperty('height', 'auto', 'important');
+                // Clear height constraints - use auto to allow natural growth
+                if (hasPixelHeight || (heightValue !== 'auto' && heightValue !== '')) {
+                    ancestor.style.setProperty('height', 'auto', 'important');
+                }
+
+                // Always clear max-height
                 ancestor.style.setProperty('max-height', 'none', 'important');
-                ancestor.style.setProperty('overflow', 'visible', 'important');
+
+                // Only clear overflow if element doesn't have border-radius (preserve styling)
+                const hasBorderRadius = cs.borderRadius && cs.borderRadius !== '0px';
+                if (hasOverflowClip && !hasBorderRadius) {
+                    ancestor.style.setProperty('overflow', 'visible', 'important');
+                }
             }
 
             ancestor = ancestor.parentElement;

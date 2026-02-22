@@ -159,6 +159,7 @@ class PopupController {
         this.ui.onRecordingIndicatorChange((val) => this._handleSettingChange('showRecordingIndicator', val));
         this.ui.onManualExpandStepChange((val) => this._handleSettingChange('manualExpandStep', val));
         this.ui.onScreenshotModeChange((mode) => this._handleSettingChange('screenshotMode', mode));
+        this.ui.onViewportPresetChange((preset) => this._handleSettingChange('viewportPreset', preset));
     }
 
     /**
@@ -327,7 +328,8 @@ class PopupController {
                 const capturedSteps = steps;
 
                 data = DownloadManager.createWorkflow(url, capturedSteps, {
-                    screenshotMode: this._settings.screenshotMode
+                    screenshotMode: this._settings.screenshotMode,
+                    viewportPreset: this._settings.viewportPreset
                 });
                 filename = 'workflow_ir.json';
                 successMsg = `Downloaded ${data.length} workflow nodes! (IR format)`;
@@ -376,7 +378,8 @@ class PopupController {
             const url = intent.url;
 
             const data = DownloadManager.createWorkflow(url, capturedSteps, {
-                screenshotMode: this._settings.screenshotMode
+                screenshotMode: this._settings.screenshotMode,
+                viewportPreset: this._settings.viewportPreset
             });
 
             const success = await DownloadManager.copyToClipboard(data);

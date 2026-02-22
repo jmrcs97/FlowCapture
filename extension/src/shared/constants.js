@@ -111,5 +111,6 @@ export const DEFAULT_SETTINGS = {
     autoMinimizeOverlay: true,
     showRecordingIndicator: true,
     manualExpandStep: 50,
-    screenshotMode: 'dynamic' // 'dynamic' | 'fullpage' | 'viewport'
+    screenshotMode: 'dynamic', // 'dynamic' | 'fullpage' | 'viewport'
+    viewportPreset: 'desktop' // 'desktop' | 'mobile'
 };

@@ -12,6 +12,7 @@ export class WorkflowCompiler {
         this.screenshotCounter = 0;
         this.workflow = [];
         this.screenshotMode = options.screenshotMode || 'dynamic';
+        this.viewportPreset = options.viewportPreset || 'desktop';
         this.preScreenshotDelay = options.preScreenshotDelay ?? 1500;
     }
 
@@ -75,6 +76,13 @@ export class WorkflowCompiler {
         // Minimum = measured settling time of the previous step
         const prevSettlingMs = prev.visual_settling?.total_ms || 0;
 
+        // CSS animation/transition duration detected on the element
+        const cssDurationMs = prev.visual_settling?.max_css_duration_ms || 0;
+
+        // Network activity: if requests were pending at settle, add buffer
+        const networkPending = prev.network_activity?.pending_at_settle || 0;
+        const networkBuffer = networkPending > 0 ? Math.min(networkPending * 500, 2000) : 0;
+
         // For capture points, the user intentionally waited for the page to be ready.
         // Preserve 90% of their actual wait time so animations complete during playback.
         // For other events (clicks, scrolls), 60% is enough since those are navigational pauses.
@@ -83,7 +91,8 @@ export class WorkflowCompiler {
         const cap = isCaptureWait ? 8000 : 4000;
         const scaledPause = interStepMs > 800 ? Math.min(Math.round(interStepMs * scaleFactor), cap) : 0;
 
-        const wait = Math.max(prevSettlingMs, scaledPause);
+        // Use the max of: visual settling, CSS animation duration, scaled pause, network buffer
+        const wait = Math.max(prevSettlingMs, cssDurationMs, scaledPause, networkBuffer);
         return wait > 250 ? Math.round(wait) : 0;
     }
 
@@ -220,6 +229,22 @@ export class WorkflowCompiler {
         // Add fallback selectors for robustness
         this._addFallbacks(params, step);
 
+        // Emit click coordinates for precise replay (fallback if selector is ambiguous)
+        if (step.trigger.coordinates) {
+            params.coordinates = {
+                x: Math.round(step.trigger.coordinates.x),
+                y: Math.round(step.trigger.coordinates.y)
+            };
+        }
+
+        // Emit keyboard modifiers (shift+click, ctrl+click, etc.)
+        if (step.trigger.modifiers) {
+            const m = step.trigger.modifiers;
+            if (m.ctrl || m.shift || m.alt || m.meta) {
+                params.modifiers = step.trigger.modifiers;
+            }
+        }
+
         if (step.trigger.button !== undefined) {
             params.button = step.trigger.button === 0 ? 'left' :
                 step.trigger.button === 1 ? 'middle' : 'right';
@@ -238,11 +263,23 @@ export class WorkflowCompiler {
         this.nodeIdCounter++;
 
         // Add WAIT for visual settling — accordion opens, modal appears, animation plays, etc.
-        // Uses the measured settling time from the layout stabilizer (recorded by the extension).
         const settlingMs = step.visual_settling?.total_ms || 0;
+        const cssDurationMs = step.visual_settling?.max_css_duration_ms || 0;
+        const networkPending = step.network_activity?.pending_at_settle || 0;
         const hasVisualChange = this._hasSignificantVisualChanges(step);
-        if (hasVisualChange || settlingMs > 150) {
-            const waitMs = Math.min(Math.max(settlingMs, 300), 2500);
+
+        // Detect accordion/collapse clicks — these ALWAYS need a wait for CSS transition (350ms+)
+        // Check primary selector, fallback selectors, className, and element context
+        const allSelectors = [
+            step.trigger?.selector || '',
+            ...(step.trigger?.selectorFallbacks || []),
+            step.trigger?.metadata?.className || ''
+        ].join(' ');
+        const isAccordionClick = /accordion|collapse|toggle|tab-pane/i.test(allSelectors);
+
+        if (hasVisualChange || settlingMs > 150 || cssDurationMs > 150 || networkPending > 0 || isAccordionClick) {
+            const baseMs = Math.max(settlingMs, cssDurationMs, networkPending > 0 ? 500 : 0, isAccordionClick ? 450 : 0);
+            const waitMs = Math.min(Math.max(baseMs, 400), 5000);
             this._addWaitNode('Wait for DOM to settle', { condition: 'fixed-time', timeoutMs: waitMs });
         }
     }
@@ -381,6 +418,7 @@ export class WorkflowCompiler {
             });
         }
 
+        const viewport = step.trigger.viewport || {};
         const currentIndex = this.workflow.length;
         this.workflow.push({
             type: 'SCREENSHOT',
@@ -391,7 +429,9 @@ export class WorkflowCompiler {
                 fullPage: true,
                 useDynamicHeight: true,
                 dynamicHeightDelay: 1,
-                viewportWidth: step.trigger.viewport?.width || 1440,
+                viewportWidth: viewport.width || 1440,
+                viewportHeight: viewport.height || null,
+                devicePixelRatio: viewport.devicePixelRatio || 1,
                 filename: `checkpoint_${String(this.screenshotCounter).padStart(3, '0')}`
             },
             connections: [{ to: currentIndex + 1, condition: 'success' }]
@@ -614,14 +654,21 @@ export class WorkflowCompiler {
         const expandParams = step.trigger.expandParams;
         if (!expandParams) return;
 
+        // Validate container selector — reject bare tag names (e.g., "div", "span")
+        let container = expandParams.selector;
+        if (container && /^[a-z][a-z0-9]*$/i.test(container.trim())) {
+            console.warn(`⚠️ EXPAND: Bare tag selector "${container}" rejected — would match first element on page`);
+            return; // Skip this EXPAND entirely — bare tag would expand wrong element
+        }
+
         const currentIndex = this.workflow.length;
 
         this.workflow.push({
             type: 'EXPAND',
-            label: `Expand ${this._getReadableSelector(expandParams.selector)}`,
+            label: `Expand ${this._getReadableSelector(container)}`,
             params: {
                 mode: expandParams.mode || 'scroll-measure',
-                container: expandParams.selector,
+                container: container,
                 value: expandParams.value,
                 clearAncestorConstraints: expandParams.clearAncestorConstraints !== false,
                 scrollStep: 100,
@@ -634,6 +681,12 @@ export class WorkflowCompiler {
             connections: [{ to: currentIndex + 1, condition: 'success' }]
         });
         this.nodeIdCounter++;
+
+        // Wait for expansion to render and DOM to settle before screenshot
+        this._addWaitNode('Wait for expansion to render', {
+            condition: 'fixed-time',
+            timeoutMs: 500
+        });
     }
 
     /**
@@ -671,12 +724,22 @@ export class WorkflowCompiler {
             });
         }
 
+        const viewport = step.trigger.viewport || {};
         const currentIndex = this.workflow.length;
         const sanitized = label.replace(/[<>:"/\\|?*\s]+/g, '_').substring(0, 40);
+        const modeParams = this._screenshotModeParams();
         const params = {
-            ...this._screenshotModeParams(),
+            ...modeParams,
+            viewportWidth: viewport.width || 1440,
+            devicePixelRatio: viewport.devicePixelRatio || 1,
             filename: `${String(this.screenshotCounter).padStart(3, '0')}_${sanitized}`
         };
+
+        // Only set viewportHeight if NOT using dynamic height
+        // (dynamic height should be measured at runtime, not recorded)
+        if (!modeParams.useDynamicHeight) {
+            params.viewportHeight = viewport.height || null;
+        }
 
         this.workflow.push({
             type: 'SCREENSHOT',
@@ -696,7 +759,8 @@ export class WorkflowCompiler {
         const params = {
             captureMode: 'page',
             format: 'png',
-            viewportWidth: 1440
+            viewportPreset: this.viewportPreset,
+            viewportWidth: this.viewportPreset === 'mobile' ? 375 : 1440
         };
         switch (this.screenshotMode) {
             case 'dynamic':

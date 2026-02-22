@@ -185,6 +185,12 @@ if (window.hasFlowCapture) {
                     if (e.target.id === 'flow-capture-overlay-root' ||
                         e.target.closest?.('#flow-capture-overlay-root')) return;
 
+                    // Validate if click should be recorded (filter wrappers)
+                    if (!this._shouldRecordClick(e.target)) {
+                        console.log(`⏭️ FlowCapture: Skipped non-interactive click on <${e.target.tagName}>`);
+                        return;
+                    }
+
                     this.sessionManager.startSession({
                         type: 'click',
                         target: e.target,
@@ -584,6 +590,65 @@ if (window.hasFlowCapture) {
             this.visualFeedback.showActionIcon(delta > 0 ? 'adjust-up' : 'adjust-down');
         }
 
+
+        /**
+         * Validate if a click should be recorded (filter out wrapper elements)
+         * @param {Element} target - The clicked element
+         * @returns {boolean} - True if click should be recorded
+         * @private
+         */
+        _shouldRecordClick(target) {
+            // Always record clicks on interactive elements
+            const interactiveElements = /^(A|BUTTON|INPUT|SELECT|TEXTAREA|SUMMARY|DETAILS)$/i;
+            if (interactiveElements.test(target.tagName)) {
+                return true;
+            }
+
+            // Check for ARIA interactive roles
+            const role = target.getAttribute('role');
+            if (role && /^(button|link|checkbox|radio|tab|menuitem|option|switch)$/i.test(role)) {
+                return true;
+            }
+
+            // Check for explicit click handlers (direct event listeners)
+            if (target.onclick || target.hasAttribute('onclick')) {
+                return true;
+            }
+
+            // Check if element has meaningful attributes (likely intentional)
+            if (target.id || target.hasAttribute('data-action') || target.hasAttribute('data-toggle')) {
+                return true;
+            }
+
+            // Reject pure wrapper elements (common false positives)
+            const wrapperPatterns = [
+                /^slick-(track|list|slide)$/i,        // Carousel wrappers
+                /^modal-(content|dialog|backdrop)$/i, // Modal wrappers
+                /^(container|wrapper|inner|outer)$/i, // Generic wrappers
+                /^accordion-collapse$/i,               // Accordion content area
+                /^tab-content$/i                       // Tab content wrapper
+            ];
+
+            const className = target.className || '';
+            if (typeof className === 'string' && wrapperPatterns.some(p => p.test(className))) {
+                console.log(`🚫 FlowCapture: Skipping wrapper click: .${className}`);
+                return false;
+            }
+
+            // If has class name and not in reject list, allow
+            if (className) {
+                return true;
+            }
+
+            // Reject bare <div>, <span>, <section> without classes/id/role
+            if (/^(DIV|SPAN|SECTION|ARTICLE)$/i.test(target.tagName)) {
+                console.log(`🚫 FlowCapture: Skipping bare ${target.tagName} click`);
+                return false;
+            }
+
+            // Allow all other cases (err on the side of recording)
+            return true;
+        }
 
         /**
          * Handle completed interaction session

@@ -38,6 +38,7 @@ export class PopupUI {
             recordingIndicatorToggle: document.getElementById('recording-indicator-toggle'),
             manualExpandStepInput: document.getElementById('manual-expand-step'),
             screenshotModeGroup: document.getElementById('screenshot-mode-group'),
+            viewportPresetGroup: document.getElementById('viewport-preset-group'),
             copyBtn: document.getElementById('copy-btn'),
             copySettingBtn: document.getElementById('copy-setting-btn')
         };
@@ -400,6 +401,10 @@ export class PopupUI {
             const radio = this.el.screenshotModeGroup.querySelector(`input[value="${settings.screenshotMode}"]`);
             if (radio) radio.checked = true;
         }
+        if (this.el.viewportPresetGroup) {
+            const radio = this.el.viewportPresetGroup.querySelector(`input[value="${settings.viewportPreset}"]`);
+            if (radio) radio.checked = true;
+        }
     }
 
     /**
@@ -520,6 +525,15 @@ export class PopupUI {
     onScreenshotModeChange(handler) {
         if (this.el.screenshotModeGroup) {
             this.el.screenshotModeGroup.addEventListener('change', (e) => {
+                if (e.target.type === 'radio') handler(e.target.value);
+            });
+        }
+    }
+
+    /** @param {Function} handler - Called with 'desktop' | 'mobile' */
+    onViewportPresetChange(handler) {
+        if (this.el.viewportPresetGroup) {
+            this.el.viewportPresetGroup.addEventListener('change', (e) => {
                 if (e.target.type === 'radio') handler(e.target.value);
             });
         }

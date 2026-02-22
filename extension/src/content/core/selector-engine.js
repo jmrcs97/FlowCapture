@@ -250,9 +250,18 @@ export class SelectorEngine {
 
         // Direct text content
         const text = this._getDirectText(el);
+        const isSemantic = /^(H[1-6]|BUTTON|A|LABEL|LI|SUMMARY|FIGCAPTION|LEGEND|OPTION|TD|TH)$/.test(el.tagName);
         if (text && text.length >= 2 && text.length <= 60 && !/^\d+$/.test(text) && !/^\s*$/.test(text)) {
-            preds.push({ expr: `[normalize-space(.)=${this._xq(text)}]`, weight: 1 });
-        } else if (/^(H[1-6]|BUTTON|A|LABEL|LI|SUMMARY|FIGCAPTION|LEGEND|OPTION|TD|TH)$/.test(el.tagName)) {
+            if (isSemantic || text.length <= 25) {
+                // Semantic elements or short text: exact match is reliable
+                preds.push({ expr: `[normalize-space(.)=${this._xq(text)}]`, weight: 1 });
+            } else {
+                // Content elements (p, div, span) with long text: use contains() for resilience
+                const words = text.split(/\s+/);
+                const snippet = words.length > 3 ? words.slice(0, 3).join(' ') : text;
+                preds.push({ expr: `[contains(normalize-space(.),${this._xq(snippet)})]`, weight: 2 });
+            }
+        } else if (isSemantic) {
             // Semantic elements: use full innerText when direct text is empty (e.g., <button><div>Text</div></button>)
             const inner = (el.innerText || el.textContent || '').trim();
             if (inner && inner.length >= 2 && !/^\d+$/.test(inner) && !/^\s*$/.test(inner)) {

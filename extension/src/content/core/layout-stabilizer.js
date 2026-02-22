@@ -173,7 +173,8 @@ export class LayoutStabilizer {
                     stabilized: isStable,
                     timed_out: isTimeout,
                     total_ms: elapsed,
-                    new_elements: this.newElements
+                    new_elements: this.newElements,
+                    max_css_duration_ms: this._getMaxCssDuration()
                 });
             }
         } else {
@@ -193,10 +194,57 @@ export class LayoutStabilizer {
             timed_out: false,
             forced: true,
             total_ms: Date.now() - this.startTime,
-            new_elements: this.newElements
+            new_elements: this.newElements,
+            max_css_duration_ms: this._getMaxCssDuration()
         };
 
         if (this.onStabilized) this.onStabilized(report);
         return report;
+    }
+
+    /**
+     * Detect the maximum CSS transition/animation duration across all candidates.
+     * This helps the workflow compiler know the expected visual duration.
+     * @returns {number} Max duration in ms (0 if none)
+     * @private
+     */
+    _getMaxCssDuration() {
+        let maxMs = 0;
+
+        for (const el of this.candidates) {
+            if (!document.contains(el)) continue;
+            try {
+                const cs = getComputedStyle(el);
+
+                // Parse transition-duration (e.g. "0.3s, 0.5s" → 500)
+                const tDurations = cs.transitionDuration?.split(',') || [];
+                for (const d of tDurations) {
+                    const ms = this._parseCssDuration(d.trim());
+                    if (ms > maxMs) maxMs = ms;
+                }
+
+                // Parse animation-duration
+                const aDurations = cs.animationDuration?.split(',') || [];
+                for (const d of aDurations) {
+                    const ms = this._parseCssDuration(d.trim());
+                    if (ms > maxMs) maxMs = ms;
+                }
+            } catch (_) { /* detached element */ }
+        }
+
+        return maxMs;
+    }
+
+    /**
+     * Parse CSS duration string to ms (e.g. "0.3s" → 300, "200ms" → 200)
+     * @param {string} val
+     * @returns {number}
+     * @private
+     */
+    _parseCssDuration(val) {
+        if (!val || val === '0s' || val === '0ms') return 0;
+        if (val.endsWith('ms')) return parseFloat(val) || 0;
+        if (val.endsWith('s')) return (parseFloat(val) || 0) * 1000;
+        return 0;
     }
 }

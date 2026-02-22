@@ -16,6 +16,7 @@
 
 import { CONFIG } from '../../shared/constants.js';
 import { LayoutStabilizer } from './layout-stabilizer.js';
+import { NetworkMonitor } from './network-monitor.js';
 
 export class SessionManager {
     constructor(selectorEngine, onSessionComplete) {
@@ -23,6 +24,8 @@ export class SessionManager {
         this.onSessionComplete = onSessionComplete;
         this.currentSession = null;
         this.lastEvent = null; // For deduplication
+        this.networkMonitor = new NetworkMonitor();
+        this.networkMonitor.start();
     }
 
     startSession(triggerEvent) {
@@ -39,6 +42,7 @@ export class SessionManager {
         this.currentSession = new InteractionSession(
             triggerEvent,
             this.selectorEngine,
+            this.networkMonitor,
             (stepData) => {
                 if (this.onSessionComplete) this.onSessionComplete(stepData);
                 if (this.currentSession?.id === stepData.step_id) {
@@ -111,15 +115,17 @@ export class SessionManager {
  * Uma única interação: trigger + observação de efeitos + estabilização
  */
 class InteractionSession {
-    constructor(triggerEvent, selectorEngine, onComplete) {
+    constructor(triggerEvent, selectorEngine, networkMonitor, onComplete) {
         this.id = Math.random().toString(36).substr(2, 9);
         this.selectorEngine = selectorEngine;
+        this.networkMonitor = networkMonitor;
         this.onComplete = onComplete;
         this.isFinalized = false;
 
         this.trigger = this._buildTrigger(triggerEvent);
         this.beforeBodyClasses = document.body.className;
         this.mutations = [];
+        this.networkSnapshotBefore = networkMonitor ? networkMonitor.getSnapshot() : null;
 
         this.layoutStabilizer = new LayoutStabilizer();
         this._initCandidates(triggerEvent.target);
@@ -279,12 +285,25 @@ class InteractionSession {
                 settle_frame: visualReport.settle_frame,
                 stabilized: visualReport.stabilized,
                 timed_out: visualReport.timed_out || false,
-                total_ms: visualReport.total_ms
+                total_ms: visualReport.total_ms,
+                max_css_duration_ms: visualReport.max_css_duration_ms || 0
             };
 
             // new_elements do stabilizer → effects
             if (visualReport.new_elements?.length > 0) {
                 step.effects.new_elements = visualReport.new_elements;
+            }
+        }
+
+        // Network activity snapshot (requests triggered by this interaction)
+        if (this.networkMonitor) {
+            const after = this.networkMonitor.getSnapshot();
+            const requestsDuringStep = after.total - (this.networkSnapshotBefore?.total || 0);
+            if (requestsDuringStep > 0 || after.pending > 0) {
+                step.network_activity = {
+                    requests_triggered: requestsDuringStep,
+                    pending_at_settle: after.pending,
+                };
             }
         }
 
