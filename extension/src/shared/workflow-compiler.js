@@ -14,6 +14,10 @@ export class WorkflowCompiler {
         this.screenshotMode = options.screenshotMode || 'dynamic';
         this.viewportPreset = options.viewportPreset || 'desktop';
         this.preScreenshotDelay = options.preScreenshotDelay ?? 1500;
+        console.log('🔧 WorkflowCompiler initialized with:', {
+            screenshotMode: this.screenshotMode,
+            viewportPreset: this.viewportPreset
+        });
     }
 
     /**
@@ -432,7 +436,7 @@ export class WorkflowCompiler {
                 viewportWidth: viewport.width || 1440,
                 viewportHeight: viewport.height || null,
                 devicePixelRatio: viewport.devicePixelRatio || 1,
-                filename: `checkpoint_${String(this.screenshotCounter).padStart(3, '0')}`
+                filename: `checkpoint_${this.screenshotCounter}`
             },
             connections: [{ to: currentIndex + 1, condition: 'success' }]
         });
@@ -776,7 +780,7 @@ export class WorkflowCompiler {
             ...modeParams,
             viewportWidth: viewport.width || 1440,
             devicePixelRatio: viewport.devicePixelRatio || 1,
-            filename: `${String(this.screenshotCounter).padStart(3, '0')}_${sanitized}`
+            filename: `${this.screenshotCounter}`
         };
 
         // Only set viewportHeight if NOT using dynamic height
@@ -821,6 +825,11 @@ export class WorkflowCompiler {
                 params.useDynamicHeight = false;
                 break;
         }
+        console.log('📸 Screenshot params generated:', {
+            viewportPreset: params.viewportPreset,
+            viewportWidth: params.viewportWidth,
+            mode: this.screenshotMode
+        });
         return params;
     }
 

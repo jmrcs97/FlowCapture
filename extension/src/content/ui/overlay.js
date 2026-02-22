@@ -341,13 +341,16 @@ export class OverlayUI {
 
         const settings = await StorageManager.getSettings();
         const screenshotMode = settings.screenshotMode || 'dynamic';
+        const viewportPreset = settings.viewportPreset || 'desktop';
 
         // Download Workflow IR
         const dlWorkflow = this.shadow.querySelector('#btn-dl-workflow');
         if (dlWorkflow) {
             dlWorkflow.onclick = () => {
                 const steps = this.stateManager.getSteps();
-                const workflow = DownloadManager.createWorkflow(window.location.href, steps, { screenshotMode });
+                const compilerOptions = { screenshotMode, viewportPreset };
+                console.log('📱 Overlay: Creating workflow with options:', compilerOptions);
+                const workflow = DownloadManager.createWorkflow(window.location.href, steps, compilerOptions);
                 DownloadManager.downloadJSON(workflow, 'workflow_ir.json');
                 this.showToast('Workflow downloaded!', 'success');
             };
@@ -369,7 +372,9 @@ export class OverlayUI {
         if (copyBtn) {
             copyBtn.onclick = async () => {
                 const steps = this.stateManager.getSteps();
-                const workflow = DownloadManager.createWorkflow(window.location.href, steps, { screenshotMode });
+                const compilerOptions = { screenshotMode, viewportPreset };
+                console.log('📱 Overlay: Copying workflow with options:', compilerOptions);
+                const workflow = DownloadManager.createWorkflow(window.location.href, steps, compilerOptions);
                 const success = await DownloadManager.copyToClipboard(workflow);
                 this.showToast(success ? 'Copied to clipboard!' : 'Copy failed', success ? 'success' : 'error');
             };

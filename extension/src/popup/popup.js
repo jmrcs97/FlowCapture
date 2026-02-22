@@ -125,10 +125,9 @@ class PopupController {
 
             // Load settings
             this._settings = await StorageManager.getSettings();
-            const shortcutBadge = document.querySelector('.shortcut-badge');
-            if (shortcutBadge) {
-                shortcutBadge.textContent = this.ui._formatShortcut(this._settings.captureShortcut);
-            }
+
+            // Populate UI with saved settings (ensures radio buttons reflect stored state)
+            this.ui.populateSettings(this._settings);
 
             // Listen for real-time updates from content script
             this._setupMessageListener();
@@ -327,10 +326,12 @@ class PopupController {
                 const url = intent.url;
                 const capturedSteps = steps;
 
-                data = DownloadManager.createWorkflow(url, capturedSteps, {
+                const compilerOptions = {
                     screenshotMode: this._settings.screenshotMode,
                     viewportPreset: this._settings.viewportPreset
-                });
+                };
+                console.log('📱 Creating workflow with options:', compilerOptions);
+                data = DownloadManager.createWorkflow(url, capturedSteps, compilerOptions);
                 filename = 'workflow_ir.json';
                 successMsg = `Downloaded ${data.length} workflow nodes! (IR format)`;
             } else {
@@ -377,10 +378,12 @@ class PopupController {
             // Specifically copy as workflow as requested
             const url = intent.url;
 
-            const data = DownloadManager.createWorkflow(url, capturedSteps, {
+            const compilerOptions = {
                 screenshotMode: this._settings.screenshotMode,
                 viewportPreset: this._settings.viewportPreset
-            });
+            };
+            console.log('📱 Creating workflow (copy) with options:', compilerOptions);
+            const data = DownloadManager.createWorkflow(url, capturedSteps, compilerOptions);
 
             const success = await DownloadManager.copyToClipboard(data);
             if (success) {
