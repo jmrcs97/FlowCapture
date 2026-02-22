@@ -424,20 +424,23 @@ export class WorkflowCompiler {
 
         const viewport = step.trigger.viewport || {};
         const currentIndex = this.workflow.length;
+        const modeParams = this._screenshotModeParams();
+        const params = {
+            ...modeParams,
+            // viewportWidth is already set correctly by _screenshotModeParams() based on viewportPreset
+            devicePixelRatio: viewport.devicePixelRatio || 1,
+            filename: `checkpoint_${this.screenshotCounter}`
+        };
+
+        // Only set viewportHeight if NOT using dynamic height
+        if (!modeParams.useDynamicHeight) {
+            params.viewportHeight = viewport.height || null;
+        }
+
         this.workflow.push({
             type: 'SCREENSHOT',
             label: 'Checkpoint screenshot',
-            params: {
-                captureMode: 'page',
-                format: 'png',
-                fullPage: true,
-                useDynamicHeight: true,
-                dynamicHeightDelay: 1,
-                viewportWidth: viewport.width || 1440,
-                viewportHeight: viewport.height || null,
-                devicePixelRatio: viewport.devicePixelRatio || 1,
-                filename: `checkpoint_${this.screenshotCounter}`
-            },
+            params,
             connections: [{ to: currentIndex + 1, condition: 'success' }]
         });
         this.nodeIdCounter++;
@@ -778,7 +781,7 @@ export class WorkflowCompiler {
         const modeParams = this._screenshotModeParams();
         const params = {
             ...modeParams,
-            viewportWidth: viewport.width || 1440,
+            // viewportWidth is already set correctly by _screenshotModeParams() based on viewportPreset
             devicePixelRatio: viewport.devicePixelRatio || 1,
             filename: `${this.screenshotCounter}`
         };
