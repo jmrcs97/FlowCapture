@@ -545,10 +545,52 @@ export class WorkflowCompiler {
      * @param {Object} step - Captured step
      * @private
      */
+    /**
+     * Filter out generic/bare tag selectors from fallbacks array
+     * Removes: "div", "p", "span", "div:nth-of-type(1)", "span:nth-child(2)", etc.
+     * Keeps: "div.className", ".parent > div:nth-of-type(1)", "div#id", XPath, aria/, etc.
+     * @param {Array} fallbacks - Array of selector strings
+     * @returns {Array} Filtered array with only valid selectors
+     * @private
+     */
+    _filterBadFallbacks(fallbacks) {
+        if (!fallbacks || !Array.isArray(fallbacks)) return [];
+
+        const filtered = fallbacks.filter(selector => {
+            if (!selector || typeof selector !== 'string') return false;
+
+            const trimmed = selector.trim();
+
+            // Keep XPath selectors (start with //)
+            if (trimmed.startsWith('//')) return true;
+
+            // Keep aria selectors (start with aria/)
+            if (trimmed.startsWith('aria/')) return true;
+
+            // Keep text selectors (start with text::)
+            if (trimmed.startsWith('text::')) return true;
+
+            // Reject bare tags and positional-only selectors
+            // Pattern matches: "div", "span", "p", "div:nth-of-type(1)", "span:nth-child(2)", etc.
+            if (/^[a-z][a-z0-9]*(:nth-(of-type|child)\(\d+\))?$/i.test(trimmed)) {
+                console.warn(`⚠️ Filtering generic fallback selector: "${selector}" — lacks class/ID/parent context`);
+                return false;
+            }
+
+            return true;
+        });
+
+        return filtered;
+    }
+
     _addFallbacks(params, step) {
         const fallbacks = step.trigger?.selectorFallbacks;
         if (fallbacks && fallbacks.length > 0) {
-            params.selectorFallbacks = fallbacks;
+            // Filter out generic selectors that would match wrong elements
+            const validFallbacks = this._filterBadFallbacks(fallbacks);
+            if (validFallbacks.length > 0) {
+                params.selectorFallbacks = validFallbacks;
+            }
         }
     }
 
@@ -654,11 +696,13 @@ export class WorkflowCompiler {
         const expandParams = step.trigger.expandParams;
         if (!expandParams) return;
 
-        // Validate container selector — reject bare tag names (e.g., "div", "span")
+        // Validate container selector — reject bare tag names and positional-only selectors
+        // Rejects: "div", "span", "div:nth-of-type(1)", "span:nth-child(2)"
+        // Allows: "div.className", ".parent > div:nth-of-type(1)", "div#id"
         let container = expandParams.selector;
-        if (container && /^[a-z][a-z0-9]*$/i.test(container.trim())) {
-            console.warn(`⚠️ EXPAND: Bare tag selector "${container}" rejected — would match first element on page`);
-            return; // Skip this EXPAND entirely — bare tag would expand wrong element
+        if (container && /^[a-z][a-z0-9]*(:nth-(of-type|child)\(\d+\))?$/i.test(container.trim())) {
+            console.warn(`⚠️ EXPAND: Generic selector "${container}" rejected — needs class/ID/parent context (e.g., ".modal-body ${container}")`);
+            return; // Skip this EXPAND entirely — generic selector would match wrong element
         }
 
         const currentIndex = this.workflow.length;
