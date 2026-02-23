@@ -43,7 +43,7 @@ export class ExpansionManager {
             if (heightValue && heightValue !== 'auto' && heightValue.endsWith('px')) {
                 const hasClass = el.className && typeof el.className === 'string' && el.className.trim();
                 const hasScroll = cs.overflow === 'auto' || cs.overflow === 'scroll' ||
-                                  cs.overflowY === 'auto' || cs.overflowY === 'scroll';
+                    cs.overflowY === 'auto' || cs.overflowY === 'scroll';
                 const scrollHeight = el.scrollHeight;
                 const clientHeight = el.clientHeight;
                 const hasScrollbar = scrollHeight > clientHeight + 1; // Has content overflow
@@ -153,15 +153,27 @@ export class ExpansionManager {
      * @returns {Object} snapshot of original styles for undo
      */
     apply(container) {
+        const cs = getComputedStyle(container);
+        const scrollbarWidth = container.offsetWidth - container.clientWidth -
+            (parseFloat(cs.borderLeftWidth) || 0) -
+            (parseFloat(cs.borderRightWidth) || 0);
+
         const originalStyles = {
             container: {
                 height: container.style.height,
                 maxHeight: container.style.maxHeight,
                 overflow: container.style.overflow,
-                overflowY: container.style.overflowY
+                overflowY: container.style.overflowY,
+                paddingRight: container.style.paddingRight
             },
             ancestors: []
         };
+
+        // Compensate for lost scrollbar width to prevent line breaks from shifting
+        if (scrollbarWidth > 0) {
+            const currentPaddingRight = parseFloat(cs.paddingRight) || 0;
+            container.style.setProperty('padding-right', `${currentPaddingRight + scrollbarWidth}px`, 'important');
+        }
 
         // Expand the container to its scroll height
         const targetHeight = container.scrollHeight;
@@ -184,13 +196,25 @@ export class ExpansionManager {
             const needsClear = hasPixelHeight || hasMaxHeight || hasOverflowClip;
 
             if (needsClear) {
+                // Measure ancestor scrollbar before clearing it
+                const aSbWidth = ancestor.offsetWidth - ancestor.clientWidth -
+                    (parseFloat(cs.borderLeftWidth) || 0) -
+                    (parseFloat(cs.borderRightWidth) || 0);
+
                 originalStyles.ancestors.push({
                     element: ancestor,
                     height: ancestor.style.height,
                     maxHeight: ancestor.style.maxHeight,
                     overflow: ancestor.style.overflow,
-                    overflowY: ancestor.style.overflowY
+                    overflowY: ancestor.style.overflowY,
+                    paddingRight: ancestor.style.paddingRight
                 });
+
+                // Compensate for lost scrollbar in ancestor
+                if (aSbWidth > 0) {
+                    const currentPaddingRight = parseFloat(cs.paddingRight) || 0;
+                    ancestor.style.setProperty('padding-right', `${currentPaddingRight + aSbWidth}px`, 'important');
+                }
 
                 // Clear height constraints - use auto to allow natural growth
                 if (hasPixelHeight || (heightValue !== 'auto' && heightValue !== '')) {
@@ -228,6 +252,7 @@ export class ExpansionManager {
         container.style.maxHeight = c.maxHeight;
         container.style.overflow = c.overflow;
         container.style.overflowY = c.overflowY;
+        container.style.paddingRight = c.paddingRight;
 
         // Restore ancestor styles
         for (const a of saved.ancestors) {
@@ -235,6 +260,7 @@ export class ExpansionManager {
             a.element.style.maxHeight = a.maxHeight;
             a.element.style.overflow = a.overflow;
             a.element.style.overflowY = a.overflowY;
+            a.element.style.paddingRight = a.paddingRight;
         }
 
         this._expandedElements.delete(container);
