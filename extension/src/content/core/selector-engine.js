@@ -113,6 +113,15 @@ export class SelectorEngine {
         tryAdd(() => this._getAriaSelector(el), 'aria');
         tryAdd(() => this._getAttributeSelector(el), 'attribute');
         tryAdd(() => this._getClassSelector(el), 'class');
+
+        // Modal-scoped fallbacks: if element is inside a visible modal,
+        // add selectors scoped to `.modal.show` to avoid clicking wrong element
+        // (e.g., multiple btn-close buttons on the page)
+        const modalScope = this._getModalScope(el);
+        if (modalScope) {
+            tryAdd(() => this._getModalScopedSelector(el, modalScope), 'modal-scope');
+        }
+
         tryAdd(() => this._getPathSelector(el, 4), 'path'); // Full hierarchy
         tryAdd(() => this._getPathSelector(el, 2), 'path-short'); // Shorter fallback (mobile-safe)
         tryAdd(() => this._getNthWithContext(el), 'nth-of-type');
@@ -878,6 +887,88 @@ export class SelectorEngine {
         } catch {
             return false;
         }
+    }
+
+    // ─── Modal Context Detection ─────────────────────────
+
+    /**
+     * Detect if element is inside a visible modal/dialog overlay.
+     * Returns the CSS selector for that modal container, or null.
+     * Supports Bootstrap (.modal.show), generic [role=dialog], and common patterns.
+     * @param {Element} el
+     * @returns {string|null}
+     * @private
+     */
+    _getModalScope(el) {
+        const modalPatterns = [
+            // Bootstrap 4/5 modals
+            { selector: '.modal.show', scope: '.modal.show' },
+            { selector: '.modal.in', scope: '.modal.in' },
+            // Generic dialog role
+            { selector: '[role="dialog"]', scope: '[role="dialog"]:not([aria-hidden="true"])' },
+            // Common frameworks
+            { selector: '.dialog.open', scope: '.dialog.open' },
+            { selector: '.overlay.active', scope: '.overlay.active' },
+            { selector: '[data-state="open"]', scope: '[data-state="open"]' },
+        ];
+
+        for (const { selector, scope } of modalPatterns) {
+            const modal = el.closest(selector);
+            if (modal) {
+                // Verify it's currently visible
+                const cs = getComputedStyle(modal);
+                if (cs.display !== 'none' && cs.visibility !== 'hidden') {
+                    return scope;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Generate a modal-scoped selector for an element inside a visible modal.
+     * E.g., `.modal.show button.btn-close` instead of `button.btn-close`
+     * @param {Element} el
+     * @param {string} modalScope - CSS selector for the modal container
+     * @returns {string|null}
+     * @private
+     */
+    _getModalScopedSelector(el, modalScope) {
+        const tag = el.tagName.toLowerCase();
+
+        // Try: modalScope + class selector
+        const bestClass = this._getBestClass(el);
+        if (bestClass) {
+            const sel = `${modalScope} ${tag}.${bestClass}`;
+            if (this._isUniqueSafe(sel)) return sel;
+        }
+
+        // Try: modalScope + aria-label
+        const ariaLabel = el.getAttribute('aria-label');
+        if (ariaLabel && !this._isBogusValue(ariaLabel)) {
+            const escaped = ariaLabel.replace(/"/g, '\\"');
+            const sel = `${modalScope} ${tag}[aria-label="${escaped}"]`;
+            if (this._isUniqueSafe(sel)) return sel;
+        }
+
+        // Try: modalScope + path (modal-header > button.btn-close)
+        const path = this._getPathSelector(el, 2);
+        if (path) {
+            const sel = `${modalScope} ${path}`;
+            if (this._isUniqueSafe(sel)) return sel;
+        }
+
+        return null;
+    }
+
+    /**
+     * Public method to get modal context for an element.
+     * Used by expansion-manager and session-manager to tag events with modal context.
+     * @param {Element} el
+     * @returns {string|null}
+     */
+    getModalContext(el) {
+        return this._getModalScope(el);
     }
 
     // ─── Public API (kept for backwards compat) ──────────

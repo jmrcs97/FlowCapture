@@ -107,6 +107,83 @@
                 </div>
             </div>
 
+            <!-- RESULTS VIEW -->
+            <div id="state-results" role="region" aria-label="Download results and conversion options" style="display: none;">
+                <div class="results-header">
+                    <div class="results-title-section">
+                        <h2 class="results-title">
+                            <span class="material-icons-round" aria-hidden="true">check_circle</span>
+                            Results Ready
+                        </h2>
+                        <p class="results-subtitle" id="results-info">Recording completed successfully</p>
+                    </div>
+                </div>
+
+                <div class="results-content">
+                    <!-- Results Summary -->
+                    <div class="results-summary">
+                        <div class="summary-item">
+                            <span class="summary-label">Steps Recorded</span>
+                            <span class="summary-value" id="results-step-count">0</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Current Preset</span>
+                            <span class="summary-value" id="results-current-preset">desktop</span>
+                        </div>
+                    </div>
+
+                    <!-- Conversion Section -->
+                    <div class="conversion-section">
+                        <h3 class="conversion-title">Convert Viewport Type</h3>
+                        <p class="conversion-desc">Change screenshot type while keeping all recorded steps</p>
+                        
+                        <div class="conversion-buttons" id="conversion-buttons-container">
+                            <!-- Will be populated dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- Primary Actions (always visible) -->
+                    <div class="results-primary-actions">
+                        <button id="copy-current-result-btn" class="btn btn-primary">
+                            <span class="material-icons-round" aria-hidden="true">content_copy</span>
+                            Copy Workflow
+                        </button>
+                    </div>
+
+                    <!-- More Options (collapsed behind chevron) -->
+                    <div class="results-more-section">
+                        <button id="results-more-toggle" class="results-more-toggle" aria-expanded="false" aria-controls="results-more-options">
+                            <span class="results-more-label">More Options</span>
+                            <span class="material-icons-round results-more-chevron" aria-hidden="true">expand_more</span>
+                        </button>
+                        <div id="results-more-options" class="results-more-options" aria-hidden="true">
+                            <button id="download-workflow-btn" class="btn-option">
+                                <span class="material-icons-round" aria-hidden="true">account_tree</span>
+                                <div class="btn-option-text">
+                                    <span class="btn-option-title">Download Workflow (IR)</span>
+                                    <span class="btn-option-desc">Executable workflow nodes</span>
+                                </div>
+                            </button>
+                            <button id="download-intent-btn" class="btn-option">
+                                <span class="material-icons-round" aria-hidden="true">description</span>
+                                <div class="btn-option-text">
+                                    <span class="btn-option-title">Download Intent (Legacy)</span>
+                                    <span class="btn-option-desc">Debug & analysis format</span>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Bottom Actions -->
+                    <div class="results-bottom-actions">
+                        <button id="back-to-recording-btn" class="btn btn-secondary">
+                            <span class="material-icons-round" aria-hidden="true">edit</span>
+                            New Recording
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- SETTINGS VIEW -->
             <div id="state-settings" class="settings-view" style="display: none;" role="region"
                 aria-label="Extension settings">

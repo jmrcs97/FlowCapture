@@ -136,6 +136,10 @@ export class WorkflowCompiler {
                 this._handleClick(step);
                 break;
 
+            case 'hover':
+                this._handleHover(step);
+                break;
+
             case 'input':
             case 'input_change':
                 this._handleInput(step);
@@ -190,6 +194,69 @@ export class WorkflowCompiler {
         if (triggerType === 'submit') {
             this._addWaitForStability(step);
         }
+    }
+
+    /**
+     * Hover handler
+     * Emits a HOVER node only when the hover seems meaningful (avoid noise).
+     */
+    _handleHover(step) {
+        const selector = step.trigger?.selector;
+        if (!selector) return;
+
+        // Anti-noise heuristics: only emit hover if there was evidence of visual effect,
+        // OR if the selector/metadata looks like a dropdown/menu trigger.
+        const effects = step.effects || {};
+        const settling = step.visual_settling || {};
+        const meta = step.trigger?.metadata || {};
+
+        const hasNewEls = Array.isArray(effects.new_elements) && effects.new_elements.length > 0;
+        const hasClassToggles = Array.isArray(effects.class_toggles) && effects.class_toggles.length > 0;
+        const hasBodyClass = Array.isArray(effects.body_class_changes) && effects.body_class_changes.length > 0;
+        const hasLayoutShift = (settling.max_layout_shift || 0) > 0.05;
+        const tookTime = (settling.total_ms || 0) > 180;
+
+        const role = (meta.role || '').toString().toLowerCase();
+        const tag = (meta.tagName || '').toString().toLowerCase();
+        const text = (meta.text || meta.ariaLabel || '').toString().toLowerCase();
+        const selectorHints = selector.toLowerCase();
+        const looksLikeMenuTrigger =
+            role.includes('menu') ||
+            tag === 'a' ||
+            tag === 'button' ||
+            /dropdown|menu|nav/i.test(selectorHints) ||
+            /about|menu|more/i.test(text);
+
+        const meaningful = hasNewEls || hasClassToggles || hasBodyClass || hasLayoutShift || tookTime || looksLikeMenuTrigger;
+        if (!meaningful) return;
+
+        const currentIndex = this.workflow.length;
+
+        const params = { selector };
+        this._addFallbacks(params, step);
+
+        if (step.trigger.coordinates) {
+            params.coordinates = {
+                x: Math.round(step.trigger.coordinates.x),
+                y: Math.round(step.trigger.coordinates.y)
+            };
+        }
+
+        // Allow explicit delay before hover effect is used by subsequent click
+        const delayMs = step.visual_settling?.max_css_duration_ms || 0;
+        if (delayMs > 0) params.delayMs = Math.min(Math.max(delayMs, 0), 1500);
+
+        this.workflow.push({
+            type: 'HOVER',
+            label: `Hover on ${this._getReadableSelector(selector, meta.text || meta.ariaLabel || '')}`,
+            params,
+            connections: [{ to: currentIndex + 1, condition: 'success' }]
+        });
+        this.nodeIdCounter++;
+
+        // Short wait for menu animations to render
+        const waitMs = Math.min(Math.max(settling.total_ms || 0, 220), 1200);
+        this._addWaitNode('Wait for hover state', { condition: 'fixed-time', timeoutMs: waitMs });
     }
 
     _addStartNode(url) {

@@ -177,6 +177,76 @@ if (window.hasFlowCapture) {
                 this._mouseY = e.clientY;
             }, { passive: true, capture: true });
 
+            // Hover capture (selective + debounced)
+            // Goal: support dropdown nav that requires hover to reveal submenu.
+            // We only record hover when it looks like a menu trigger OR when hover
+            // produces measurable visual effects (handled downstream by compiler heuristics).
+            let hoverTimer = null;
+            let lastHoverEl = null;
+            let lastHoverTs = 0;
+            const HOVER_DEBOUNCE_MS = 320;
+            const HOVER_COOLDOWN_MS = 1200;
+
+            const isLikelyMenuTrigger = (el) => {
+                if (!el || el.nodeType !== 1) return false;
+                const a = el.closest?.('a, button, [role="button"], [role="menuitem"], [aria-haspopup], [aria-expanded]') || el;
+                if (!a || a.nodeType !== 1) return false;
+
+                const hasPopup = a.getAttribute?.('aria-haspopup');
+                const hasExpanded = a.getAttribute?.('aria-expanded') !== null;
+                const role = (a.getAttribute?.('role') || '').toLowerCase();
+                const tag = (a.tagName || '').toLowerCase();
+                const cls = (a.className || '').toString();
+
+                // Common dropdown patterns
+                if (hasPopup) return true;
+                if (hasExpanded) return true;
+                if (role.includes('menuitem')) return true;
+                if (/dropdown|nav.*dropdown|menu/i.test(cls)) return true;
+
+                // Heuristic: link/button with a caret/arrow icon inside
+                if (tag === 'a' || tag === 'button' || role === 'button') {
+                    const icon = a.querySelector?.('svg, i, span');
+                    const txt = (a.innerText || a.textContent || '').trim();
+                    if (icon && /▾|▼|chevron|caret/i.test(icon.className || '') ) return true;
+                    if (/about|menu|more/i.test(txt)) return true;
+                }
+
+                return false;
+            };
+
+            document.addEventListener('pointerenter', (e) => {
+                if (!this.stateManager.isRecording) return;
+                try {
+                    const target = e.target;
+                    if (!target || target.nodeType !== 1) return;
+
+                    // Ignore our overlay
+                    if (target.id === 'flow-capture-overlay-root' ||
+                        target.closest?.('#flow-capture-overlay-root')) return;
+
+                    // Reduce noise: only consider likely menu triggers
+                    if (!isLikelyMenuTrigger(target)) return;
+
+                    const now = Date.now();
+                    if (lastHoverEl === target && (now - lastHoverTs) < HOVER_COOLDOWN_MS) return;
+
+                    if (hoverTimer) clearTimeout(hoverTimer);
+                    hoverTimer = setTimeout(() => {
+                        lastHoverEl = target;
+                        lastHoverTs = Date.now();
+
+                        this.sessionManager.startSession({
+                            type: 'hover',
+                            target,
+                            coordinates: { x: this._mouseX || 0, y: this._mouseY || 0 }
+                        });
+                    }, HOVER_DEBOUNCE_MS);
+                } catch (err) {
+                    console.error('FlowCapture: Hover error:', err);
+                }
+            }, { capture: true, passive: true });
+
             // Click capture with coordinates and modifiers
             document.addEventListener('click', (e) => {
                 if (!this.stateManager.isRecording) return;
@@ -424,7 +494,11 @@ if (window.hasFlowCapture) {
                     this.mutationTracker.stop();
                     this.overlay.updateUI(false, count);
                     this.overlay.stopTimer();
-                    if (count > 0) this.overlay.showDownloadButton(count);
+                    if (count > 0) {
+                        this.overlay.showDownloadButton(count);
+                        // Auto-sync to Screenshot Tool API
+                        this._syncToApi().catch(err => console.error('FlowCapture: Sync failed:', err));
+                    }
                     sendResponse({ status: 'stopped', count });
                     break;
 
@@ -482,8 +556,62 @@ if (window.hasFlowCapture) {
             this.mutationTracker.stop();
             this.overlay.updateUI(false, count);
             this.overlay.stopTimer();
-            if (count > 0) this.overlay.showDownloadButton(count);
+            if (count > 0) {
+                this.overlay.showDownloadButton(count);
+                // Auto-sync to Screenshot Tool API
+                this._syncToApi().catch(err => console.error('FlowCapture: Sync failed:', err));
+            }
             return count;
+        }
+
+        /**
+         * Sync captured workflow to the screenshot-tool backend
+         * @private
+         */
+        async _syncToApi() {
+            try {
+                const steps = this.stateManager.getSteps();
+                if (!steps || steps.length === 0) return;
+
+                const url = window.location.href;
+                const rootUrl = new URL(url).hostname;
+                const now = new Date();
+                const dateStr = now.toLocaleDateString('pt-BR');
+                const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                
+                const workflowName = `${dateStr} ${timeStr} - ${rootUrl}`;
+
+                const { DownloadManager } = await import(resolveModule('src/shared/download.js'));
+                const workflow = DownloadManager.createWorkflow(url, steps);
+
+                if (this.overlay) this.overlay.showToast('Enviando para Screenshot Tool...', 'info');
+
+                chrome.runtime.sendMessage({
+                    type: 'SYNC_WORKFLOW',
+                    data: {
+                        name: workflowName,
+                        url: url,
+                        workflow: workflow
+                    }
+                }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('FlowCapture: Sync error (runtime):', chrome.runtime.lastError);
+                        if (this.overlay) this.overlay.showToast('Erro de comunicação na extensão', 'error');
+                        return;
+                    }
+
+                    if (response && response.success) {
+                        console.log('FlowCapture: Sync successful', response.data);
+                        if (this.overlay) this.overlay.showToast('Sincronizado com sucesso!', 'success');
+                    } else {
+                        console.error('FlowCapture: Sync failed (response):', response?.error);
+                        if (this.overlay) this.overlay.showToast('Falha ao sincronizar com API', 'error');
+                    }
+                });
+            } catch (error) {
+                console.error('FlowCapture: Sync failed', error);
+                if (this.overlay) this.overlay.showToast('Falha ao gerar workflow', 'error');
+            }
         }
 
         /**
@@ -555,7 +683,7 @@ if (window.hasFlowCapture) {
 
             // Apply live CSS expansion + record
             this.expansionManager.expandElement(container, {
-                mode: 'fit-content',
+                mode: 'scroll-measure',
                 clearAncestorConstraints: true
             });
 

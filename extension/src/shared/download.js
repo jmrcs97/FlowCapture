@@ -43,6 +43,118 @@ export class DownloadManager {
         return workflow;
     }
 
+    /**
+     * Converte workflow entre viewport presets (desktop ↔ mobile)
+     * Muda apenas os parâmetros de screenshot, mantendo todos os steps
+     * @param {Array} workflow - Workflow IR compilado
+     * @param {string} targetPreset - 'desktop' | 'mobile'
+     * @returns {Array} Workflow convertido
+     */
+    static convertWorkflowViewport(workflow, targetPreset) {
+        if (!Array.isArray(workflow) || workflow.length === 0) {
+            console.warn('Invalid workflow format for conversion');
+            return workflow;
+        }
+
+        const isTargetDesktop = targetPreset === 'desktop';
+        const newViewportWidth = isTargetDesktop ? 1440 : 375;
+        const newViewportHeight = isTargetDesktop ? 900 : 667;
+        const sourcePreset = isTargetDesktop ? 'mobile' : 'desktop';
+
+        const converted = workflow.map(node => {
+            // 1. Convert START node — determines initial browser viewport for DOM rendering
+            //    Mobile sites serve different DOM based on viewport width, so this is critical
+            if (node.type === 'START' && node.params) {
+                return {
+                    ...node,
+                    params: {
+                        ...node.params,
+                        viewportWidth: newViewportWidth,
+                        viewportHeight: newViewportHeight
+                    }
+                };
+            }
+
+            // 2. Convert top-level SCREENSHOT nodes
+            if (node.type === 'SCREENSHOT' && node.params) {
+                return {
+                    ...node,
+                    params: {
+                        ...node.params,
+                        viewportPreset: targetPreset,
+                        viewportWidth: newViewportWidth
+                    }
+                };
+            }
+
+            // 3. Convert nested SCREENSHOT actions inside FOR_EACH_ELEMENT loops
+            if (node.type === 'FOR_EACH_ELEMENT' && node.params?.actions) {
+                const convertedActions = node.params.actions.map(action => {
+                    if (action.type === 'SCREENSHOT' && action.params) {
+                        return {
+                            ...action,
+                            params: {
+                                ...action.params,
+                                viewportPreset: targetPreset,
+                                viewportWidth: newViewportWidth
+                            }
+                        };
+                    }
+                    return action;
+                });
+
+                return {
+                    ...node,
+                    params: {
+                        ...node.params,
+                        actions: convertedActions
+                    }
+                };
+            }
+
+            return node;
+        });
+
+        console.log(`📱 Workflow converted: ${sourcePreset} (${isTargetDesktop ? 375 : 1440}px) → ${targetPreset} (${newViewportWidth}px)`);
+        console.log(`   ├─ START viewport: ${newViewportWidth}x${newViewportHeight}`);
+        console.log(`   └─ SCREENSHOT preset: ${targetPreset}`);
+        return converted;
+    }
+
+    /**
+     * Detecta o preset de viewport usado no workflow
+     * @param {Array} workflow - Workflow IR compilado
+     * @returns {'desktop' | 'mobile' | 'unknown'}
+     */
+    static detectWorkflowViewport(workflow) {
+        if (!Array.isArray(workflow) || workflow.length === 0) {
+            return 'unknown';
+        }
+
+        // 1. Check SCREENSHOT nodes first (most reliable — explicit viewportPreset)
+        for (const node of workflow) {
+            if (node.type === 'SCREENSHOT' && node.params?.viewportPreset) {
+                return node.params.viewportPreset;
+            }
+        }
+
+        // 2. Fallback: detect by SCREENSHOT viewportWidth
+        for (const node of workflow) {
+            if (node.type === 'SCREENSHOT' && node.params?.viewportWidth) {
+                return node.params.viewportWidth === 375 ? 'mobile' : 'desktop';
+            }
+        }
+
+        // 3. Fallback: detect from START node viewportWidth
+        for (const node of workflow) {
+            if (node.type === 'START' && node.params?.viewportWidth) {
+                return node.params.viewportWidth === 375 ? 'mobile' : 'desktop';
+            }
+        }
+
+        return 'unknown';
+    }
+
     static _calculateTotalDuration(steps) {
         if (!steps || steps.length === 0) return 0;
         const first = steps[0];

@@ -80,6 +80,24 @@ export class OverlayStyles {
             .widget.minimized:hover .mini-ui,
             .widget.minimized.expanded .mini-ui { display: none; }
 
+            /* Hide recording indicator when setting is disabled */
+            .mini-ui.indicator-hidden { display: none !important; }
+            .widget.minimized.indicator-hidden {
+                width: 0;
+                height: 0;
+                padding: 0;
+                border: none;
+                opacity: 0;
+                pointer-events: none;
+                overflow: hidden;
+            }
+            .widget.minimized.indicator-hidden:hover {
+                width: 0;
+                height: 0;
+                padding: 0;
+                opacity: 0;
+            }
+
             /* ─── RECORDING DOT ────────────────────────────────────── */
             .recording-dot {
                 width: 12px;
@@ -415,6 +433,99 @@ export class OverlayStyles {
             }
             .btn-export-copy:hover {
                 background: rgba(168, 85, 247, 0.25);
+            }
+
+            /* ─── CONVERSION BUTTONS ──────────────────────────────── */
+            .overlay-conversion-buttons {
+                display: flex;
+                gap: 6px;
+                margin-bottom: 4px;
+            }
+            
+            .btn-convert {
+                flex: 1;
+                padding: 6px 4px;
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                color: #94a3b8;
+                border-radius: 6px;
+                font-size: 11px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 4px;
+            }
+
+            .btn-convert:hover:not(:disabled) {
+                background: rgba(255, 255, 255, 0.1);
+                color: #e2e8f0;
+            }
+
+            .btn-convert.active {
+                background: rgba(59, 130, 246, 0.2);
+                border-color: rgba(59, 130, 246, 0.5);
+                color: #60a5fa;
+                cursor: default;
+            }
+
+            /* ─── MORE OPTIONS (COLLAPSIBLE) ──────────────────────── */
+            .overlay-more-section {
+                display: flex;
+                flex-direction: column;
+                margin-top: 4px;
+            }
+
+            .overlay-more-toggle {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                padding: 6px;
+                background: transparent;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
+                color: #94a3b8;
+                font-size: 11px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+            }
+
+            .overlay-more-toggle:hover {
+                background: rgba(255, 255, 255, 0.05);
+                color: #cbd5e1;
+            }
+
+            .overlay-more-chevron {
+                font-size: 10px;
+                transition: transform 0.25s ease;
+            }
+
+            .overlay-more-toggle[aria-expanded="true"] .overlay-more-chevron {
+                transform: rotate(180deg);
+            }
+
+            .overlay-more-options {
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+                max-height: 0;
+                overflow: hidden;
+                opacity: 0;
+                transition: max-height 0.25s ease, opacity 0.2s ease, margin 0.25s ease;
+                margin-top: 0;
+            }
+
+            .overlay-more-options.visible {
+                max-height: 150px;
+                opacity: 1;
+                margin-top: 6px;
+            }
+
+            .btn-icon {
+                font-size: 14px;
+                margin-right: 4px;
             }
         `;
     }

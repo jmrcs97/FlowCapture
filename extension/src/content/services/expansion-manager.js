@@ -154,32 +154,27 @@ export class ExpansionManager {
      */
     apply(container) {
         const cs = getComputedStyle(container);
-        const scrollbarWidth = container.offsetWidth - container.clientWidth -
-            (parseFloat(cs.borderLeftWidth) || 0) -
-            (parseFloat(cs.borderRightWidth) || 0);
 
         const originalStyles = {
             container: {
                 height: container.style.height,
                 maxHeight: container.style.maxHeight,
                 overflow: container.style.overflow,
+                overflowX: container.style.overflowX,
                 overflowY: container.style.overflowY,
                 paddingRight: container.style.paddingRight
             },
             ancestors: []
         };
 
-        // Compensate for lost scrollbar width to prevent line breaks from shifting
-        if (scrollbarWidth > 0) {
-            const currentPaddingRight = parseFloat(cs.paddingRight) || 0;
-            container.style.setProperty('padding-right', `${currentPaddingRight + scrollbarWidth}px`, 'important');
-        }
-
         // Expand the container to its scroll height
         const targetHeight = container.scrollHeight;
         container.style.setProperty('height', `${targetHeight}px`, 'important');
         container.style.setProperty('max-height', 'none', 'important');
-        container.style.setProperty('overflow', 'visible', 'important');
+        // Keep overflow-y:auto so scrollbar is preserved (prevents line-break shift)
+        // Only the height changes — the scrollbar remains in place
+        container.style.setProperty('overflow-y', 'auto', 'important');
+        container.style.setProperty('overflow-x', cs.overflowX || 'auto', 'important');
 
         // Walk up ancestors and adjust height constraints
         let ancestor = container.parentElement;
@@ -188,6 +183,16 @@ export class ExpansionManager {
 
         while (ancestor && ancestor !== document.documentElement && depth < maxDepth) {
             const cs = getComputedStyle(ancestor);
+
+            // Do not clear constraints on modals or fixed positioning containers
+            // This preserves their ability to scroll independently instead of breaking layout
+            if (cs.position === 'fixed' || cs.position === 'sticky' ||
+                ancestor.classList.contains('modal') ||
+                ancestor.classList.contains('modal-dialog') ||
+                ancestor.getAttribute('role') === 'dialog') {
+                break;
+            }
+
             const heightValue = cs.height;
             const hasPixelHeight = heightValue && heightValue !== 'auto' && heightValue.endsWith('px');
             const hasMaxHeight = cs.maxHeight !== 'none' && cs.maxHeight !== '';
@@ -196,25 +201,15 @@ export class ExpansionManager {
             const needsClear = hasPixelHeight || hasMaxHeight || hasOverflowClip;
 
             if (needsClear) {
-                // Measure ancestor scrollbar before clearing it
-                const aSbWidth = ancestor.offsetWidth - ancestor.clientWidth -
-                    (parseFloat(cs.borderLeftWidth) || 0) -
-                    (parseFloat(cs.borderRightWidth) || 0);
-
                 originalStyles.ancestors.push({
                     element: ancestor,
                     height: ancestor.style.height,
                     maxHeight: ancestor.style.maxHeight,
                     overflow: ancestor.style.overflow,
+                    overflowX: ancestor.style.overflowX,
                     overflowY: ancestor.style.overflowY,
                     paddingRight: ancestor.style.paddingRight
                 });
-
-                // Compensate for lost scrollbar in ancestor
-                if (aSbWidth > 0) {
-                    const currentPaddingRight = parseFloat(cs.paddingRight) || 0;
-                    ancestor.style.setProperty('padding-right', `${currentPaddingRight + aSbWidth}px`, 'important');
-                }
 
                 // Clear height constraints - use auto to allow natural growth
                 if (hasPixelHeight || (heightValue !== 'auto' && heightValue !== '')) {
@@ -224,10 +219,11 @@ export class ExpansionManager {
                 // Always clear max-height
                 ancestor.style.setProperty('max-height', 'none', 'important');
 
-                // Only clear overflow if element doesn't have border-radius (preserve styling)
+                // Only clear clipping overflow (hidden) — keep auto/scroll to preserve scrollbar
                 const hasBorderRadius = cs.borderRadius && cs.borderRadius !== '0px';
                 if (hasOverflowClip && !hasBorderRadius) {
-                    ancestor.style.setProperty('overflow', 'visible', 'important');
+                    // Use 'auto' instead of 'visible' to preserve scrollbar on ancestors
+                    ancestor.style.setProperty('overflow-y', 'auto', 'important');
                 }
             }
 
@@ -251,6 +247,7 @@ export class ExpansionManager {
         container.style.height = c.height;
         container.style.maxHeight = c.maxHeight;
         container.style.overflow = c.overflow;
+        container.style.overflowX = c.overflowX;
         container.style.overflowY = c.overflowY;
         container.style.paddingRight = c.paddingRight;
 
@@ -259,6 +256,7 @@ export class ExpansionManager {
             a.element.style.height = a.height;
             a.element.style.maxHeight = a.maxHeight;
             a.element.style.overflow = a.overflow;
+            a.element.style.overflowX = a.overflowX;
             a.element.style.overflowY = a.overflowY;
             a.element.style.paddingRight = a.paddingRight;
         }
@@ -299,7 +297,7 @@ export class ExpansionManager {
      * @returns {Object} original styles
      */
     expandElement(container, config = {}) {
-        const { clearAncestorConstraints = true, mode = 'fit-content' } = config;
+        const { clearAncestorConstraints = true, mode = 'scroll-measure' } = config;
 
         const originalStyles = this.apply(container);
         this._expandedElements.set(container, originalStyles);
@@ -366,10 +364,13 @@ export class ExpansionManager {
         }
 
         this._heightAdjustmentTimeout = setTimeout(() => {
-            const selector = this.selectorEngine.getUniqueSelector(el);
+            const { primary, fallbacks } = this.selectorEngine.getMultipleCandidates(el);
+            const selector = primary || this.selectorEngine.getUniqueSelector(el);
+
             this.sessionManager.startSession({
                 type: 'expand',
                 target: el,
+                selectorFallbacks: fallbacks, // Place fallbacks at the root level for WorkflowCompiler
                 expandParams: {
                     selector,
                     mode: 'absolute',

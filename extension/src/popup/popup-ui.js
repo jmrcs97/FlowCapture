@@ -23,6 +23,7 @@ export class PopupUI {
             markCaptureBtn: document.getElementById('mark-capture-btn'),
             stateIdle: document.getElementById('state-idle'),
             stateRecording: document.getElementById('state-recording'),
+            stateResults: document.getElementById('state-results'),
             stateSettings: document.getElementById('state-settings'),
             timerDisplay: document.getElementById('timer'),
             eventCountDisplay: document.getElementById('event-count'),
@@ -42,6 +43,15 @@ export class PopupUI {
             copyBtn: document.getElementById('copy-btn'),
             copySettingBtn: document.getElementById('copy-setting-btn')
         };
+
+        console.log('🎨 PopupUI initialized with elements:', {
+            stateIdle: !!this.el.stateIdle,
+            stateRecording: !!this.el.stateRecording,
+            stateResults: !!this.el.stateResults,
+            stateSettings: !!this.el.stateSettings,
+            downloadBtn: !!this.el.downloadBtn,
+            downloadDropdown: !!this.el.downloadDropdown
+        });
 
         this._setupDropdownBehavior();
     }
@@ -306,13 +316,19 @@ export class PopupUI {
      * @param {Function} handler - Called with format ('intent' or 'workflow')
      */
     onDownloadFormatClick(handler) {
-        if (!this.el.downloadDropdown) return;
+        if (!this.el.downloadDropdown) {
+            console.warn('⚠️ downloadDropdown element not found');
+            return;
+        }
 
         const items = this.el.downloadDropdown.querySelectorAll('.dropdown-item');
-        items.forEach(item => {
+        console.log('📋 Registering download format handlers for', items.length, 'items');
+
+        items.forEach((item, index) => {
             item.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const format = item.getAttribute('data-format');
+                console.log('🖱️ Download item clicked:', { index, format });
                 if (format) {
                     handler(format);
                     this.closeDropdown();
@@ -537,5 +553,302 @@ export class PopupUI {
                 if (e.target.type === 'radio') handler(e.target.value);
             });
         }
+    }
+
+    // ─── RESULTS VIEW METHODS ────────────────────────────
+
+    /**
+     * Show results view with download/conversion options
+     * @param {number} stepCount - Number of steps recorded
+     * @param {string} currentPreset - Current viewport preset ('desktop' | 'mobile')
+     */
+    showResults(stepCount, currentPreset) {
+        console.log('🎯 showResults called:', { stepCount, currentPreset });
+
+        // Hide all other views - force display none
+        if (this.el.stateIdle) this.el.stateIdle.style.display = 'none';
+        if (this.el.stateRecording) this.el.stateRecording.style.display = 'none';
+        if (this.el.stateSettings) this.el.stateSettings.style.display = 'none';
+
+        // Show results view
+        if (this.el.stateResults) {
+            // Force it to show
+            this.el.stateResults.style.display = 'flex';
+            this.el.stateResults.style.visibility = 'visible';
+            this.el.stateResults.style.opacity = '1';
+
+            // Update step count
+            const stepCountEl = document.getElementById('results-step-count');
+            if (stepCountEl) {
+                stepCountEl.textContent = stepCount;
+            }
+
+            // Update preset with icon
+            const presetEl = document.getElementById('results-current-preset');
+            if (presetEl) {
+                const icon = currentPreset === 'desktop' ? 'computer' : 'smartphone';
+                presetEl.innerHTML = `<span class="material-icons-round" style="font-size: 16px; vertical-align: middle; margin-right: 4px;">${icon}</span>${currentPreset.charAt(0).toUpperCase() + currentPreset.slice(1)}`;
+            }
+
+            // Setup conversion buttons
+            this.setupConversionButtons(currentPreset);
+
+            // Setup More Options toggle
+            this._setupMoreOptionsToggle();
+        } else {
+            console.error('❌ CRITICAL: stateResults element NOT FOUND in el cache!');
+        }
+    }
+
+    /**
+     * Configure the primary action button on Results view.
+     * @param {'download'|'copy'} action
+     */
+    setResultsPrimaryAction(action) {
+        // The primary action is now always Copy — no-op kept for compatibility
+    }
+
+    /**
+     * Setup the More Options chevron toggle behavior
+     * @private
+     */
+    _setupMoreOptionsToggle() {
+        const toggle = document.getElementById('results-more-toggle');
+        const options = document.getElementById('results-more-options');
+        if (!toggle || !options) return;
+
+        // Remove old listeners (in case showResults called multiple times)
+        const newToggle = toggle.cloneNode(true);
+        toggle.parentNode.replaceChild(newToggle, toggle);
+
+        newToggle.addEventListener('click', () => {
+            const isExpanded = newToggle.getAttribute('aria-expanded') === 'true';
+            newToggle.setAttribute('aria-expanded', !isExpanded);
+            options.setAttribute('aria-hidden', isExpanded);
+            
+            if (!isExpanded) {
+                options.classList.add('visible');
+            } else {
+                options.classList.remove('visible');
+            }
+        });
+    }
+
+    /**
+     * Hide results view
+     */
+    hideResults() {
+        if (this.el.stateResults) {
+            this.el.stateResults.style.display = 'none';
+        }
+    }
+
+    /**
+     * Setup conversion buttons based on current viewport preset
+     * @param {string} currentPreset - 'desktop' | 'mobile'
+     * @private
+     */
+    setupConversionButtons(currentPreset) {
+        console.log('🔘 setupConversionButtons called with:', currentPreset);
+        const container = document.getElementById('conversion-buttons-container');
+        if (!container) {
+            console.error('❌ Conversion buttons container NOT FOUND in DOM!');
+            console.log('📋 Trying to find it manually...');
+            const manual = document.querySelector('#conversion-buttons-container');
+            console.log('📍 Manual search result:', manual);
+            return;
+        }
+
+        console.log('✓ Container found, setup starting...');
+        container.innerHTML = '';
+
+        const targetPreset = currentPreset === 'desktop' ? 'mobile' : 'desktop';
+        const targetWidth = currentPreset === 'desktop' ? '375px' : '1440px';
+        const targetIcon = currentPreset === 'desktop' ? 'smartphone' : 'computer';
+        const label = `Convert to ${targetPreset.charAt(0).toUpperCase() + targetPreset.slice(1)} (${targetWidth})`;
+
+        const btn = document.createElement('button');
+        btn.className = 'btn-convert';
+        btn.id = `btn-convert-to-${targetPreset}`;
+
+        // Add icon
+        const icon = document.createElement('span');
+        icon.className = 'material-icons-round';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = targetIcon;
+        btn.appendChild(icon);
+
+        // Add label text
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = label;
+        btn.appendChild(labelSpan);
+
+        btn.addEventListener('click', () => {
+            console.log('🖱️ Convert button clicked:', targetPreset);
+            this._handleConversionClick(targetPreset);
+        });
+
+        container.appendChild(btn);
+        console.log('✅ Button added to container successfully');
+    }
+
+    /**
+     * Handle conversion button click - trigger event
+     * @private
+     */
+    _handleConversionClick(targetPreset) {
+        console.log('🖱️ _handleConversionClick called with:', targetPreset);
+        const btn = document.getElementById(`btn-convert-to-${targetPreset}`);
+        console.log('🔍 Looking for button:', `btn-convert-to-${targetPreset}`);
+        console.log('📍 Button element found:', btn);
+        
+        if (btn) {
+            console.log('✓ Button found, adding loading state and dispatching event');
+            btn.classList.add('loading');
+            btn.disabled = true;
+            console.log('📤 Dispatching fc-convert-viewport event:', targetPreset);
+            // Dispatch custom event that controller will listen to
+            window.dispatchEvent(new CustomEvent('fc-convert-viewport', { detail: { targetPreset } }));
+        } else {
+            console.error('❌ Button not found - event NOT dispatched!');
+        }
+    }
+
+    /**
+     * Update conversion button after conversion completes
+     * @param {string} newPreset - 'desktop' | 'mobile'
+     */
+    updateConversionComplete(newPreset) {
+        const oldPreset = newPreset === 'desktop' ? 'mobile' : 'desktop';
+        const btn = document.getElementById(`btn-convert-to-${oldPreset}`);
+        if (btn) {
+            btn.classList.remove('loading');
+        }
+
+        // Update current preset display with icon
+        const presetEl = document.getElementById('results-current-preset');
+        if (presetEl) {
+            const icon = newPreset === 'desktop' ? 'computer' : 'smartphone';
+            presetEl.innerHTML = `<span class="material-icons-round" style="font-size: 16px; vertical-align: middle; margin-right: 4px;">${icon}</span>${newPreset.charAt(0).toUpperCase() + newPreset.slice(1)}`;
+        }
+
+        // Setup new conversion button for the other direction
+        this.setupConversionButtons(newPreset);
+
+        this.showSuccess(`✓ Converted to ${newPreset}`);
+    }
+
+    /**
+     * Register handler for conversion click
+     * @param {Function} handler - Called with { targetPreset }
+     */
+    onConvertViewport(handler) {
+        console.log('📌 Registering onConvertViewport event listener');
+        window.addEventListener('fc-convert-viewport', (e) => {
+            console.log('🎯 fc-convert-viewport event RECEIVED:', e.detail.targetPreset);
+            console.log('🔗 Calling handler with:', e.detail.targetPreset);
+            handler(e.detail.targetPreset);
+        });
+        console.log('✅ fc-convert-viewport listener registered');
+    }
+
+    /**
+     * Register handler for download current result
+     * @param {Function} handler
+     */
+    onDownloadCurrentResult(handler) {
+        // Copy button (always visible primary action)
+        const copyBtn = document.getElementById('copy-current-result-btn');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', handler);
+        }
+    }
+
+    /**
+     * Register handler for download workflow button (inside More Options)
+     * @param {Function} handler
+     */
+    onDownloadWorkflow(handler) {
+        const btn = document.getElementById('download-workflow-btn');
+        if (btn) {
+            btn.addEventListener('click', handler);
+        }
+    }
+
+    /**
+     * Register handler for download intent button (inside More Options)
+     * @param {Function} handler
+     */
+    onDownloadIntent(handler) {
+        const btn = document.getElementById('download-intent-btn');
+        if (btn) {
+            btn.addEventListener('click', handler);
+        }
+    }
+
+    /**
+     * Register handler for back to recording
+     * @param {Function} handler
+     */
+    onBackToRecording(handler) {
+        const btn = document.getElementById('back-to-recording-btn');
+        if (btn) {
+            btn.addEventListener('click', handler);
+        }
+    }
+
+    /**
+     * Diagnostic method to verify DOM structure and visibility
+     * @private
+     */
+    _logDiagnostics() {
+        console.group('🔍 DOM DIAGNOSTICS');
+        
+        // Check all state views
+        console.group('State Views');
+        console.log('stateIdle exists:', !!this.el.stateIdle);
+        console.log('stateRecording exists:', !!this.el.stateRecording);
+        console.log('stateResults exists:', !!this.el.stateResults);
+        console.log('stateSettings exists:', !!this.el.stateSettings);
+        
+        if (this.el.stateResults) {
+            const computed = window.getComputedStyle(this.el.stateResults);
+            console.log('stateResults computed styles:', {
+                display: computed.display,
+                visibility: computed.visibility,
+                opacity: computed.opacity,
+                parentDisplay: window.getComputedStyle(this.el.stateResults.parentElement).display
+            });
+        }
+        console.groupEnd();
+
+        // Check results view content
+        console.group('Results View Elements');
+        const stepCountEl = document.getElementById('results-step-count');
+        const presetEl = document.getElementById('results-current-preset');
+        const containerEl = document.getElementById('conversion-buttons-container');
+        const backBtn = document.getElementById('back-to-recording-btn');
+        const copyBtn = document.getElementById('copy-current-result-btn');
+        const dlWorkflowBtn = document.getElementById('download-workflow-btn');
+        const dlIntentBtn = document.getElementById('download-intent-btn');
+        
+        console.log('results-step-count element exists:', !!stepCountEl);
+        console.log('results-current-preset element exists:', !!presetEl);
+        console.log('conversion-buttons-container element exists:', !!containerEl);
+        console.log('back-to-recording-btn element exists:', !!backBtn);
+        console.log('copy-current-result-btn element exists:', !!copyBtn);
+        console.log('download-workflow-btn element exists:', !!dlWorkflowBtn);
+        console.log('download-intent-btn element exists:', !!dlIntentBtn);
+        console.groupEnd();
+
+        // Check conversion button
+        console.group('Conversion Button');
+        const convertBtnDesktop = document.getElementById('btn-convert-to-desktop');
+        const convertBtnMobile = document.getElementById('btn-convert-to-mobile');
+        console.log('btn-convert-to-desktop exists:', !!convertBtnDesktop);
+        console.log('btn-convert-to-mobile exists:', !!convertBtnMobile);
+        console.groupEnd();
+
+        console.groupEnd(); // End diagnostics group
     }
 }

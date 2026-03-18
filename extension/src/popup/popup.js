@@ -63,6 +63,12 @@ class PopupController {
         this._expandShortcutListener = null;
         this._messageListener = null;
 
+        // Store current workflow for conversion
+        this._currentWorkflow = null;
+        this._currentWorkflowUrl = null;
+        this._currentWorkflowSteps = null;
+        this._resultsPrimaryAction = 'download'; // 'download' | 'copy'
+
         // Cleanup all resources when popup window closes
         window.addEventListener('unload', () => this._cleanup());
 
@@ -141,12 +147,22 @@ class PopupController {
      * Setup button click handlers
      */
     _setupHandlers() {
+        console.log('🔧 Setting up popup handlers...');
         this.ui.onStartClick(() => this._handleStart());
         this.ui.onStopClick(() => this._handleStop());
         this.ui.onMarkCaptureClick(() => this._handleMarkCapture());
         this.ui.onDownloadFormatClick((format) => this._handleDownload(format));
         this.ui.onCopyClick(() => this._handleCopy());
         this.ui.onCopySettingClick(() => this._handleCopy());
+
+        // Results view handlers
+        this.ui.onConvertViewport((targetPreset) => this._handleConvertViewport(targetPreset));
+        this.ui.onDownloadCurrentResult(() => this._handleCopyCurrentResult());
+        this.ui.onDownloadWorkflow(() => this._handleDownloadWorkflow());
+        this.ui.onDownloadIntent(() => this._handleDownloadIntent());
+        this.ui.onBackToRecording(() => this._handleBackToRecording());
+
+        console.log('✅ All handlers registered');
 
         // Settings handlers
         this.ui.onSettingsClick(() => this._handleOpenSettings());
@@ -298,30 +314,42 @@ class PopupController {
      */
     async _handleDownload(format) {
         try {
+            console.log('%c📥 Download requested (HANDLER CALLED)', 'color: blue; font-weight: bold', format);
             const tab = await getActiveTab();
-            if (!tab) return;
+            if (!tab) {
+                console.warn('❌ No active tab found');
+                return;
+            }
+
+            console.log('📍 Active tab found:', tab.url);
 
             const response = await sendTabMessage(tab.id, { action: MESSAGE_ACTIONS.GET_INTENT });
 
             if (!response?.intent) {
                 this.ui.showError('No data found. Page may have been reloaded.');
+                console.warn('❌ No intent data in response');
                 return;
             }
 
             const intent = response.intent;
+            console.log('✓ Intent received');
 
             // Validate intent structure before proceeding
             const steps = intent.intent_analysis?.steps;
             if (!Array.isArray(steps) || steps.length === 0) {
                 this.ui.showError('No steps recorded. Start a recording session first.');
+                console.warn('❌ No steps in intent');
                 return;
             }
+
+            console.log(`✓ Found ${steps.length} steps`);
 
             await StorageManager.saveIntentData(intent);
 
             let data, filename, successMsg;
 
             if (format === 'workflow') {
+                console.log('%c📊 WORKFLOW FORMAT SELECTED', 'color: green; font-weight: bold');
                 // Compile to workflow IR
                 const url = intent.url;
                 const capturedSteps = steps;
@@ -333,7 +361,29 @@ class PopupController {
                 console.log('📱 Creating workflow with options:', compilerOptions);
                 data = DownloadManager.createWorkflow(url, capturedSteps, compilerOptions);
                 filename = 'workflow_ir.json';
-                successMsg = `Downloaded ${data.length} workflow nodes! (IR format)`;
+                successMsg = `✓ Generated workflow with ${data.length} nodes!`;
+
+                console.log(`✓ Workflow compiled: ${data.length} nodes`);
+
+                // Store for conversion
+                this._currentWorkflow = data;
+                this._currentWorkflowUrl = url;
+                this._currentWorkflowSteps = capturedSteps;
+                this._resultsPrimaryAction = 'download';
+
+                console.log('💾 Workflow stored in controller');
+
+                // Show results view instead of immediate download
+                console.log('%c🎯 SHOWING RESULTS VIEW NOW', 'color: red; font-weight: bold', {
+                    stepsLength: steps.length,
+                    preset: this._settings.viewportPreset
+                });
+
+                this.ui.closeDropdown();
+                this.ui.showResults(steps.length, this._settings.viewportPreset);
+                
+                this.ui.showSuccess(successMsg);
+                return;
             } else {
                 // Legacy intent format
                 data = intent;
@@ -346,7 +396,7 @@ class PopupController {
             this.ui.showSuccess(successMsg);
 
         } catch (error) {
-            console.error('Download failed:', error);
+            console.error('%c❌ Download failed with error:', 'color: red; font-weight: bold', error);
             this.ui.showError('Failed to download: ' + error.message);
         }
     }
@@ -385,12 +435,15 @@ class PopupController {
             console.log('📱 Creating workflow (copy) with options:', compilerOptions);
             const data = DownloadManager.createWorkflow(url, capturedSteps, compilerOptions);
 
-            const success = await DownloadManager.copyToClipboard(data);
-            if (success) {
-                this.ui.showSuccess('Workflow copied to clipboard!');
-            } else {
-                this.ui.showError('Failed to copy to clipboard');
-            }
+            // Store for conversion + results view
+            this._currentWorkflow = data;
+            this._currentWorkflowUrl = url;
+            this._currentWorkflowSteps = capturedSteps;
+
+            // Show results view so user can convert viewport then copy
+            this.ui.closeDropdown();
+            this.ui.showResults(capturedSteps.length, this._settings.viewportPreset);
+            this.ui.showToast('Converta (opcional) e clique em "Copy Workflow".', 'info', 3200);
 
         } catch (error) {
             console.error('Copy failed:', error);
@@ -557,6 +610,133 @@ class PopupController {
         };
 
         document.addEventListener('keydown', this._expandShortcutListener);
+    }
+
+    /**
+     * Handle viewport conversion request
+     * @param {string} targetPreset - 'desktop' | 'mobile'
+     */
+    async _handleConvertViewport(targetPreset) {
+        try {
+            console.log('🔄 Convert viewport requested:', targetPreset);
+            if (!this._currentWorkflow) {
+                this.ui.showError('No workflow data to convert');
+                console.warn('⚠️ No current workflow stored');
+                return;
+            }
+
+            const currentPreset = DownloadManager.detectWorkflowViewport(this._currentWorkflow);
+            console.log(`🔄 Converting workflow from ${currentPreset} to ${targetPreset}`);
+
+            // Convert the workflow
+            this._currentWorkflow = DownloadManager.convertWorkflowViewport(
+                this._currentWorkflow,
+                targetPreset
+            );
+
+            // Update UI to reflect new preset
+            this.ui.updateConversionComplete(targetPreset);
+            console.log('✅ Conversion complete');
+
+        } catch (error) {
+            console.error('❌ Conversion failed:', error);
+            this.ui.showError('Failed to convert: ' + error.message);
+        }
+    }
+
+    /**
+     * Handle copy current result (primary action — always copies to clipboard)
+     */
+    async _handleCopyCurrentResult() {
+        try {
+            if (!this._currentWorkflow) {
+                this.ui.showError('No workflow data to copy');
+                return;
+            }
+
+            const currentPreset = DownloadManager.detectWorkflowViewport(this._currentWorkflow);
+            const success = await DownloadManager.copyToClipboard(this._currentWorkflow);
+            
+            if (success) {
+                this.ui.showSuccess(`✓ Copied workflow (${currentPreset})`);
+            } else {
+                this.ui.showError('Failed to copy to clipboard');
+            }
+        } catch (error) {
+            console.error('❌ Copy failed:', error);
+            this.ui.showError('Failed to copy: ' + error.message);
+        }
+    }
+
+    /**
+     * Handle download workflow (IR format) from More Options
+     */
+    _handleDownloadWorkflow() {
+        try {
+            if (!this._currentWorkflow) {
+                this.ui.showError('No workflow data to download');
+                return;
+            }
+
+            const currentPreset = DownloadManager.detectWorkflowViewport(this._currentWorkflow);
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+            const filename = `workflow_${currentPreset}_${timestamp}.json`;
+
+            DownloadManager.downloadJSON(this._currentWorkflow, filename);
+            this.ui.showSuccess(`✓ Downloaded workflow (${currentPreset})`);
+        } catch (error) {
+            console.error('❌ Download workflow failed:', error);
+            this.ui.showError('Failed to download: ' + error.message);
+        }
+    }
+
+    /**
+     * Handle download intent (legacy format) from More Options
+     */
+    async _handleDownloadIntent() {
+        try {
+            const tab = await getActiveTab();
+            if (!tab) return;
+
+            const response = await sendTabMessage(tab.id, { action: MESSAGE_ACTIONS.GET_INTENT });
+            if (!response?.intent) {
+                this.ui.showError('No intent data available');
+                return;
+            }
+
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+            DownloadManager.downloadJSON(response.intent, `intent_${timestamp}.json`);
+            this.ui.showSuccess('✓ Downloaded intent (legacy)');
+        } catch (error) {
+            console.error('❌ Download intent failed:', error);
+            this.ui.showError('Failed to download: ' + error.message);
+        }
+    }
+
+    /**
+     * Handle back to recording button - reset to idle state
+     */
+    async _handleBackToRecording() {
+        try {
+            console.log('↩️ Back to recording requested');
+            // Clear stored workflow
+            this._currentWorkflow = null;
+            this._currentWorkflowUrl = null;
+            this._currentWorkflowSteps = null;
+
+            // Reset to idle state
+            this.ui.hideResults();
+            this.ui.updateState(false, 0);
+
+            // Clear recording state storage
+            await StorageManager.setRecordingState(false);
+
+            this.ui.showSuccess('Ready for new recording');
+            console.log('✅ Reset to recording state');
+        } catch (error) {
+            console.error('❌ Back to recording failed:', error);
+            this.ui.showError('Failed to reset: ' + error.message);
+        }
     }
 }
 

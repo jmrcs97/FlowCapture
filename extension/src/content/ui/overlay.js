@@ -86,21 +86,38 @@ export class OverlayUI {
                     </button>
                     <div id="export-options" style="display:none">
                         <div class="export-label" id="export-label">Ready</div>
-                        <button class="btn-export btn-export-workflow"
-                                id="btn-dl-workflow"
-                                aria-label="Download workflow IR">
-                            Download Workflow
-                        </button>
-                        <button class="btn-export btn-export-intent"
-                                id="btn-dl-intent"
-                                aria-label="Download intent JSON">
-                            Download Intent
-                        </button>
+                        
+                        <!-- Conversion Options -->
+                        <div id="overlay-conversion-container" class="overlay-conversion-buttons">
+                            <!-- Will be populated dynamically -->
+                        </div>
+                        
+                        <!-- Primary Action -->
                         <button class="btn-export btn-export-copy"
                                 id="btn-copy-workflow"
                                 aria-label="Copy workflow to clipboard">
-                            Copy Workflow
+                            <span class="btn-icon">📋</span> Copy Workflow
                         </button>
+                        
+                        <!-- More Options (Collapsible) -->
+                        <div class="overlay-more-section">
+                            <button id="overlay-more-toggle" class="overlay-more-toggle" aria-expanded="false">
+                                <span>More Options</span>
+                                <span class="overlay-more-chevron">▼</span>
+                            </button>
+                            <div id="overlay-more-options" class="overlay-more-options" aria-hidden="true">
+                                <button class="btn-export btn-export-workflow"
+                                        id="btn-dl-workflow"
+                                        aria-label="Download workflow IR">
+                                    <span class="btn-icon">📁</span> Download Workflow
+                                </button>
+                                <button class="btn-export btn-export-intent"
+                                        id="btn-dl-intent"
+                                        aria-label="Download intent JSON">
+                                    <span class="btn-icon">📄</span> Download Intent
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -273,6 +290,13 @@ export class OverlayUI {
             this.widget.classList.add('minimized');
             this.widget.classList.remove('expanded');
 
+            // Respect recording indicator visibility setting
+            if (this._showRecordingIndicator === false) {
+                this.widget.classList.add('indicator-hidden');
+                const miniUI = this.shadow.querySelector('.mini-ui');
+                if (miniUI) miniUI.classList.add('indicator-hidden');
+            }
+
             // Reset button states
             const stopBtn = this.shadow.querySelector('#btn-stop');
             stopBtn.classList.remove('loading');
@@ -282,6 +306,7 @@ export class OverlayUI {
             rec.style.display = 'none';
             this.widget.classList.remove('minimized');
             this.widget.classList.remove('expanded');
+            this.widget.classList.remove('indicator-hidden');
 
             // Reset button states
             const startBtn = this.shadow.querySelector('#btn-start');
@@ -340,45 +365,119 @@ export class OverlayUI {
         if (label) label.textContent = `${count} steps recorded`;
 
         const settings = await StorageManager.getSettings();
-        const screenshotMode = settings.screenshotMode || 'dynamic';
-        const viewportPreset = settings.viewportPreset || 'desktop';
+        const initialPreset = settings.viewportPreset || 'desktop';
 
-        // Download Workflow IR
-        const dlWorkflow = this.shadow.querySelector('#btn-dl-workflow');
-        if (dlWorkflow) {
-            dlWorkflow.onclick = () => {
-                const steps = this.stateManager.getSteps();
-                const compilerOptions = { screenshotMode, viewportPreset };
-                console.log('📱 Overlay: Creating workflow with options:', compilerOptions);
-                const workflow = DownloadManager.createWorkflow(window.location.href, steps, compilerOptions);
-                DownloadManager.downloadJSON(workflow, 'workflow_ir.json');
-                this.showToast('Workflow downloaded!', 'success');
+        // Render Conversion Buttons
+        this._renderConversionButtons(initialPreset);
+
+        // Setup More Options Toggle
+        const toggleBtn = this.shadow.querySelector('#overlay-more-toggle');
+        const moreOptions = this.shadow.querySelector('#overlay-more-options');
+        if (toggleBtn && moreOptions) {
+            // Clean up any old listeners
+            const newToggle = toggleBtn.cloneNode(true);
+            toggleBtn.parentNode.replaceChild(newToggle, toggleBtn);
+            
+            newToggle.onclick = () => {
+                const isExpanded = newToggle.getAttribute('aria-expanded') === 'true';
+                newToggle.setAttribute('aria-expanded', !isExpanded);
+                moreOptions.setAttribute('aria-hidden', isExpanded);
+                if (isExpanded) {
+                    moreOptions.classList.remove('visible');
+                } else {
+                    moreOptions.classList.add('visible');
+                }
             };
         }
 
-        // Download Intent (legacy)
-        const dlIntent = this.shadow.querySelector('#btn-dl-intent');
-        if (dlIntent) {
-            dlIntent.onclick = () => {
-                const steps = this.stateManager.getSteps();
-                const intent = DownloadManager.createIntent(window.location.href, steps);
-                DownloadManager.downloadJSON(intent, 'flow_capture_intent.json');
-                this.showToast('Intent downloaded!', 'success');
-            };
-        }
-
-        // Copy Workflow to clipboard
+        // Copy Workflow to clipboard (Primary Action)
         const copyBtn = this.shadow.querySelector('#btn-copy-workflow');
         if (copyBtn) {
             copyBtn.onclick = async () => {
+                const currentSettings = await StorageManager.getSettings();
+                const screenshotMode = currentSettings.screenshotMode || 'dynamic';
+                const viewportPreset = currentSettings.viewportPreset || 'desktop';
+
                 const steps = this.stateManager.getSteps();
                 const compilerOptions = { screenshotMode, viewportPreset };
                 console.log('📱 Overlay: Copying workflow with options:', compilerOptions);
                 const workflow = DownloadManager.createWorkflow(window.location.href, steps, compilerOptions);
                 const success = await DownloadManager.copyToClipboard(workflow);
-                this.showToast(success ? 'Copied to clipboard!' : 'Copy failed', success ? 'success' : 'error');
+                this.showToast(success ? `Copied to clipboard (${viewportPreset})` : 'Copy failed', success ? 'success' : 'error');
             };
         }
+
+        // Download Workflow IR (More Options)
+        const dlWorkflow = this.shadow.querySelector('#btn-dl-workflow');
+        if (dlWorkflow) {
+            dlWorkflow.onclick = async () => {
+                const currentSettings = await StorageManager.getSettings();
+                const screenshotMode = currentSettings.screenshotMode || 'dynamic';
+                const viewportPreset = currentSettings.viewportPreset || 'desktop';
+
+                const steps = this.stateManager.getSteps();
+                const compilerOptions = { screenshotMode, viewportPreset };
+                console.log('📱 Overlay: Creating workflow with options:', compilerOptions);
+                
+                const workflow = DownloadManager.createWorkflow(window.location.href, steps, compilerOptions);
+                const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+                DownloadManager.downloadJSON(workflow, `workflow_${viewportPreset}_${timestamp}.json`);
+                this.showToast(`Workflow downloaded! (${viewportPreset})`, 'success');
+            };
+        }
+
+        // Download Intent (Legacy) (More Options)
+        const dlIntent = this.shadow.querySelector('#btn-dl-intent');
+        if (dlIntent) {
+            dlIntent.onclick = () => {
+                const steps = this.stateManager.getSteps();
+                const intent = DownloadManager.createIntent(window.location.href, steps);
+                const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+                DownloadManager.downloadJSON(intent, `intent_${timestamp}.json`);
+                this.showToast('Intent downloaded!', 'success');
+            };
+        }
+    }
+
+    /**
+     * Helper to render conversion buttons dynamically and handle clicks
+     * @param {string} currentPreset 
+     */
+    _renderConversionButtons(currentPreset) {
+        const container = this.shadow.querySelector('#overlay-conversion-container');
+        if (!container) return;
+
+        const presets = [
+            { id: 'desktop', label: 'Desktop', icon: '💻' },
+            { id: 'mobile', label: 'Mobile', icon: '📱' }
+        ];
+
+        let html = '';
+        for (const p of presets) {
+            const isActive = p.id === currentPreset;
+            html += `
+                <button class="btn-convert ${isActive ? 'active' : ''}" 
+                        data-preset="${p.id}" 
+                        ${isActive ? 'disabled' : ''}>
+                    ${p.icon} Convert to ${p.label}
+                </button>
+            `;
+        }
+        container.innerHTML = html;
+
+        // Bind clicks
+        container.querySelectorAll('.btn-convert').forEach(btn => {
+            btn.onclick = async () => {
+                const targetPreset = btn.dataset.preset;
+                this.showToast(`Converting to ${targetPreset}...`, 'info');
+                
+                // Save setting
+                await StorageManager.saveSettings({ viewportPreset: targetPreset });
+                
+                // Re-render with new state
+                this._renderConversionButtons(targetPreset);
+            };
+        });
     }
 
     /**
@@ -464,9 +563,20 @@ export class OverlayUI {
      * @param {boolean} visible
      */
     setRecordingIndicatorVisible(visible) {
+        this._showRecordingIndicator = visible;
         const miniUI = this.shadow.querySelector('.mini-ui');
         if (miniUI) {
-            miniUI.style.display = visible ? '' : 'none';
+            if (visible) {
+                miniUI.classList.remove('indicator-hidden');
+            } else {
+                miniUI.classList.add('indicator-hidden');
+            }
+        }
+        // Also update the minimized dot visibility on the whole widget
+        if (!visible && this._isRecording) {
+            this.widget.classList.add('indicator-hidden');
+        } else {
+            this.widget.classList.remove('indicator-hidden');
         }
     }
 
