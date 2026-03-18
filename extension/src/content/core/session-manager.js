@@ -180,6 +180,10 @@ class InteractionSession {
             trigger.captureLabel = triggerEvent.captureLabel;
         }
 
+        if (triggerEvent.type === 'navigation') {
+            trigger.url = triggerEvent.url;
+        }
+
         return trigger;
     }
 

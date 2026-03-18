@@ -446,6 +446,66 @@ if (window.hasFlowCapture) {
                     console.error('FlowCapture: Scroll error:', err);
                 }
             }, true);
+
+            // ─── URL / Navigation change detection ───────────────────────────
+            // Covers three cases:
+            //   1. Traditional page navigation (popstate: back/forward/links)
+            //   2. Hash-only changes (hashchange)
+            //   3. SPA pushState navigation (React Router, Next.js, etc.)
+            //
+            // We record a 'navigation' step so WorkflowCompiler emits a GOTO node.
+            // A small debounce prevents duplicate events when pushState + popstate
+            // fire together in some frameworks.
+
+            let lastRecordedUrl = window.location.href;
+            let navDebounceTimer = null;
+            const NAV_DEBOUNCE_MS = 150;
+
+            const recordNavigation = (newUrl) => {
+                if (!this.stateManager.isRecording) return;
+                if (newUrl === lastRecordedUrl) return;
+
+                clearTimeout(navDebounceTimer);
+                navDebounceTimer = setTimeout(() => {
+                    if (newUrl === lastRecordedUrl) return; // re-check inside timer
+                    console.log(`🧭 FlowCapture: Navigation detected → ${newUrl}`);
+                    lastRecordedUrl = newUrl;
+
+                    this.sessionManager.startSession({
+                        type: 'navigation',
+                        target: document.body,
+                        url: newUrl
+                    });
+                }, NAV_DEBOUNCE_MS);
+            };
+
+            // popstate: browser back/forward + link clicks that trigger history
+            window.addEventListener('popstate', () => {
+                recordNavigation(window.location.href);
+            });
+
+            // hashchange: anchor jumps (#section)
+            window.addEventListener('hashchange', () => {
+                recordNavigation(window.location.href);
+            });
+
+            // Intercept history.pushState & replaceState for SPA routing
+            const _patchHistoryMethod = (methodName) => {
+                const original = history[methodName];
+                history[methodName] = function (...args) {
+                    const result = original.apply(this, args);
+                    // URL is updated synchronously after the call
+                    recordNavigation(window.location.href);
+                    return result;
+                };
+            };
+
+            // Only patch once (guard against re-injection)
+            if (!window.__fcHistoryPatched) {
+                window.__fcHistoryPatched = true;
+                _patchHistoryMethod('pushState');
+                _patchHistoryMethod('replaceState');
+            }
         }
 
         /**

@@ -140,6 +140,10 @@ export class WorkflowCompiler {
                 this._handleHover(step);
                 break;
 
+            case 'navigation':
+                this._handleNavigation(step);
+                break;
+
             case 'input':
             case 'input_change':
                 this._handleInput(step);
@@ -257,6 +261,56 @@ export class WorkflowCompiler {
         // Short wait for menu animations to render
         const waitMs = Math.min(Math.max(settling.total_ms || 0, 220), 1200);
         this._addWaitNode('Wait for hover state', { condition: 'fixed-time', timeoutMs: waitMs });
+    }
+
+    /**
+     * Handle URL navigation step → emits a GOTO node
+     * Called when the extension detects the page URL changed during recording
+     * (popstate, hashchange, or history.pushState / replaceState).
+     * @param {Object} step - Captured navigation step
+     * @private
+     */
+    _handleNavigation(step) {
+        const url = step.trigger?.url;
+        if (!url) return;
+
+        const currentIndex = this.workflow.length;
+
+        this.workflow.push({
+            type: 'GOTO',
+            label: `Navigate to ${this._shortenUrl(url)}`,
+            params: {
+                url,
+                waitUntil: 'networkidle2',
+                timeoutMs: 30000
+            },
+            connections: [{ to: currentIndex + 1, condition: 'success' }]
+        });
+        this.nodeIdCounter++;
+
+        // Wait for the new page / SPA route to fully settle
+        this._addWaitNode('Wait for navigation to settle', {
+            condition: 'fixed-time',
+            timeoutMs: 2000
+        });
+
+        console.log(`🧭 WorkflowCompiler: GOTO node added → ${url}`);
+    }
+
+    /**
+     * Shorten a URL to a readable label (hostname + pathname, max 60 chars)
+     * @param {string} url
+     * @returns {string}
+     * @private
+     */
+    _shortenUrl(url) {
+        try {
+            const u = new URL(url);
+            const path = u.hostname + u.pathname;
+            return path.length > 60 ? path.substring(0, 57) + '…' : path;
+        } catch {
+            return url.substring(0, 60);
+        }
     }
 
     _addStartNode(url) {
