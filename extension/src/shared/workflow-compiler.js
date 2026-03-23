@@ -32,27 +32,19 @@ export class WorkflowCompiler {
         this.loopCounter = 0;
         this.workflow = [];
 
-        // 1. Node START
         this._addStartNode(startUrl);
-
-        // 2. WAIT inicial para carregamento
         this._addWaitNode('Wait for initial page load', {
             condition: 'fixed-time',
             timeoutMs: 2000
         });
 
-        // 3. Processa cada step capturado
         capturedSteps.forEach((step, index) => {
             this._processStep(step, index, capturedSteps);
         });
 
-        // 4. Optimize: detect repetitive CLICK→SCREENSHOT patterns → LOOP
         this.workflow = this._optimizeRepetitivePatterns(this.workflow);
 
-        // 5. Node OUTPUT final
         this._addOutputNode();
-
-        // 6. Validate compiled workflow
         this._validateWorkflow(this.workflow);
 
         return this.workflow;
@@ -373,7 +365,6 @@ export class WorkflowCompiler {
             };
         }
 
-        // Emit keyboard modifiers (shift+click, ctrl+click, etc.)
         if (step.trigger.modifiers) {
             const m = step.trigger.modifiers;
             if (m.ctrl || m.shift || m.alt || m.meta) {
@@ -678,12 +669,6 @@ export class WorkflowCompiler {
         return lastPart.replace(/[:>\[\]="]/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 30) || 'element';
     }
 
-    /**
-     * Add fallback selectors to params if available
-     * @param {Object} params - Node params
-     * @param {Object} step - Captured step
-     * @private
-     */
     /**
      * Filter out generic/bare tag selectors from fallbacks array
      * Removes: "div", "p", "span", "div:nth-of-type(1)", "span:nth-child(2)", etc.

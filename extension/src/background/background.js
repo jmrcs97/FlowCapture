@@ -4,13 +4,11 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.action.onClicked.addListener((tab) => {
     if (tab.id) {
-        // Try to toggle overlay
         chrome.tabs.sendMessage(tab.id, { action: "toggleOverlay" })
             .then(() => console.log("FlowCapture: Toggle sent to tab", tab.id))
             .catch(err => {
                 console.warn("FlowCapture: Could not send toggleOverlay. Injecting content script...", err);
 
-                // Fallback: Inject content script if missing (e.g. after install)
                 chrome.scripting.executeScript({
                     target: { tabId: tab.id },
                     files: ['src/content/content.js']

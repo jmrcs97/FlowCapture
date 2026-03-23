@@ -29,7 +29,6 @@ export class SessionManager {
     }
 
     startSession(triggerEvent) {
-        // Deduplication check
         if (this._isDuplicate(triggerEvent)) {
             console.log('SessionManager: Duplicate event ignored', triggerEvent.type);
             return null;
@@ -51,7 +50,6 @@ export class SessionManager {
             }
         );
 
-        // Track last event for deduplication
         this.lastEvent = {
             target: triggerEvent.target,
             type: triggerEvent.type,
@@ -138,7 +136,6 @@ class InteractionSession {
     _buildTrigger(triggerEvent) {
         const target = triggerEvent.target;
 
-        // Get primary + fallback selectors for robustness
         const candidates = this.selectorEngine.getMultipleCandidates(target);
 
         const trigger = {
@@ -155,7 +152,6 @@ class InteractionSession {
             }
         };
 
-        // Event-specific data
         if (triggerEvent.coordinates) trigger.coordinates = triggerEvent.coordinates;
         if (triggerEvent.modifiers) trigger.modifiers = triggerEvent.modifiers;
         if (triggerEvent.button !== undefined) trigger.button = triggerEvent.button;
@@ -166,7 +162,6 @@ class InteractionSession {
         }
         if (triggerEvent.type === 'scroll') trigger.scroll = triggerEvent.scrollData;
 
-        // Custom events from style-capture helpers
         if (triggerEvent.type === 'style_change') {
             trigger.styleChange = triggerEvent.styleChanges;
         }
@@ -204,18 +199,15 @@ class InteractionSession {
         }
         meta.text = text.trim().substring(0, 100);
 
-        // ARIA labels
         const ariaLabel = el.getAttribute('aria-label')
             || el.getAttribute('aria-labelledby')
             || el.title
             || el.name;
         if (ariaLabel) meta.ariaLabel = ariaLabel.trim();
 
-        // Common attributes
         if (el.placeholder) meta.placeholder = el.placeholder;
         if (el.getAttribute('data-testid')) meta.testId = el.getAttribute('data-testid');
 
-        // Link/image/form attributes
         if (el.href) meta.href = el.href;
         if (el.src) meta.src = el.src;
         if (el.type) meta.inputType = el.type;
@@ -323,13 +315,11 @@ class InteractionSession {
     _buildEffects() {
         const effects = {};
 
-        // Class toggles dos mutations de atributo 'class'
         const classToggles = this._extractClassToggles();
         if (classToggles.length > 0) {
             effects.class_toggles = classToggles;
         }
 
-        // Body class diff
         const afterBodyClasses = document.body.className;
         const bodyDiff = this._diffClasses(this.beforeBodyClasses, afterBodyClasses);
         if (bodyDiff) {

@@ -32,7 +32,6 @@ export class OverlayUI {
         this._isRecording = false;
         this._autoMinimize = true;
 
-        // Create Shadow DOM container
         this.container = document.createElement('div');
         this.container.id = 'flow-capture-overlay-root';
         this.shadow = this.container.attachShadow({ mode: 'open' });
@@ -40,7 +39,6 @@ export class OverlayUI {
         this._render();
         document.body.appendChild(this.container);
 
-        // Setup keyboard shortcuts
         this._setupKeyboardNav();
     }
 
@@ -49,7 +47,6 @@ export class OverlayUI {
      * @private
      */
     _render() {
-        // Inject styles
         const style = document.createElement('style');
         style.textContent = OverlayStyles.getStyles();
         this.shadow.appendChild(style);
@@ -178,13 +175,11 @@ export class OverlayUI {
      * @private
      */
     _bindEvents(w) {
-        // Close button
         w.querySelector('#close-btn').onclick = (e) => {
             e.stopPropagation();
             this.hide();
         };
 
-        // Start recording (direct call - chrome.runtime.sendMessage doesn't reach own content script)
         w.querySelector('#btn-start').onclick = async () => {
             const btn = w.querySelector('#btn-start');
             btn.classList.add('loading');
@@ -202,7 +197,6 @@ export class OverlayUI {
             }
         };
 
-        // Stop recording (direct call)
         w.querySelector('#btn-stop').onclick = async () => {
             const btn = w.querySelector('#btn-stop');
             btn.classList.add('loading');
@@ -220,7 +214,6 @@ export class OverlayUI {
             }
         };
 
-        // Mark Capture (screenshot placeholder)
         w.querySelector('#btn-mark-capture').onclick = () => {
             // Dispatch to FlowCapture content script
             if (window.flowCapture && window.flowCapture._triggerMarkCapture) {
@@ -244,7 +237,6 @@ export class OverlayUI {
             }
         });
 
-        // Click to expand (for touch devices)
         w.addEventListener('click', (e) => {
             if (this._isRecording && this.widget.classList.contains('minimized')) {
                 e.stopPropagation();
@@ -252,7 +244,6 @@ export class OverlayUI {
             }
         });
 
-        // Click outside to minimize
         document.addEventListener('click', (e) => {
             if (this._isRecording && !this.container.contains(e.target)) {
                 this.widget.classList.add('minimized');
@@ -266,7 +257,6 @@ export class OverlayUI {
      * @private
      */
     _setupKeyboardNav() {
-        // ESC to close overlay
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && this.isVisible) {
                 this.hide();
@@ -297,7 +287,6 @@ export class OverlayUI {
                 if (miniUI) miniUI.classList.add('indicator-hidden');
             }
 
-            // Reset button states
             const stopBtn = this.shadow.querySelector('#btn-stop');
             stopBtn.classList.remove('loading');
             stopBtn.textContent = 'Stop Recording';
@@ -367,10 +356,8 @@ export class OverlayUI {
         const settings = await StorageManager.getSettings();
         const initialPreset = settings.viewportPreset || 'desktop';
 
-        // Render Conversion Buttons
         this._renderConversionButtons(initialPreset);
 
-        // Setup More Options Toggle
         const toggleBtn = this.shadow.querySelector('#overlay-more-toggle');
         const moreOptions = this.shadow.querySelector('#overlay-more-options');
         if (toggleBtn && moreOptions) {
@@ -465,7 +452,6 @@ export class OverlayUI {
         }
         container.innerHTML = html;
 
-        // Bind clicks
         container.querySelectorAll('.btn-convert').forEach(btn => {
             btn.onclick = async () => {
                 const targetPreset = btn.dataset.preset;
@@ -496,7 +482,6 @@ export class OverlayUI {
         toast.textContent = message;
         toast.classList.add(type, 'visible');
 
-        // Auto-hide
         setTimeout(() => {
             toast.classList.remove('visible');
         }, duration);

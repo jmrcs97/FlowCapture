@@ -94,7 +94,6 @@ export class SelectorEngine {
 
         const candidates = [];
 
-        // Each strategy is wrapped in try/catch for robustness
         const tryAdd = (fn, strategy) => {
             try {
                 const sel = fn();
@@ -104,7 +103,6 @@ export class SelectorEngine {
             }
         };
 
-        // Puppeteer-safe selectors first (priority order)
         if (el.id && !this._isBogusValue(el.id) && this._isIdUnique(el.id)) {
             candidates.push({ selector: `#${CSS.escape(el.id)}`, strategy: 'id' });
         }
@@ -126,7 +124,6 @@ export class SelectorEngine {
         tryAdd(() => this._getPathSelector(el, 2), 'path-short'); // Shorter fallback (mobile-safe)
         tryAdd(() => this._getNthWithContext(el), 'nth-of-type');
 
-        // Text-based selectors as fallbacks only
         tryAdd(() => this._getTextBasedSelector(el), 'text');
         tryAdd(() => this._getImgAltSelector(el), 'img-alt');
         tryAdd(() => this._getClosestHeadingSelector(el), 'heading-context');
@@ -150,48 +147,40 @@ export class SelectorEngine {
         // Bubble up to nearest interactive ancestor before applying strategies
         el = INTERACTIVE_ELEMENTS.findInteractiveAncestor(el);
 
-        // Strategy 1: ID (only if truly unique on page)
         if (el.id && !this._isBogusValue(el.id) && this._isIdUnique(el.id)) {
             return `#${CSS.escape(el.id)}`;
         }
 
-        // Strategy 2: XPath with predicates (combines conditions for uniqueness)
         const xpathSelector = this._getXPathSelector(el);
         if (xpathSelector) {
             return xpathSelector;
         }
 
-        // Strategy 3: Aria label (Puppeteer-native aria/ selector)
         const ariaSelector = this._getAriaSelector(el);
         if (ariaSelector) {
             return ariaSelector;
         }
 
-        // Strategy 4: Stable data-* attributes (CSS)
         const attrSelector = this._getAttributeSelector(el);
         if (attrSelector && this._isUniqueSafe(attrSelector)) {
             return attrSelector;
         }
 
-        // Strategy 5: Meaningful classes (filters SC hashes)
         const classSelector = this._getClassSelector(el);
         if (classSelector && this._isUniqueSafe(classSelector)) {
             return classSelector;
         }
 
-        // Strategy 6: Path selector (parent > child chain)
         const pathSelector = this._getPathSelector(el, 4);
         if (pathSelector && this._isUniqueSafe(pathSelector)) {
             return pathSelector;
         }
 
-        // Strategy 7: nth-of-type with parent context (last resort CSS)
         const nthSelector = this._getNthWithContext(el);
         if (nthSelector) {
             return nthSelector;
         }
 
-        // Strategy 8-10: Fallbacks (text::, img-alt, heading-context)
         const textSelector = this._getTextBasedSelector(el);
         if (textSelector) return textSelector;
 
@@ -219,13 +208,11 @@ export class SelectorEngine {
 
         if (predicates.length === 0) return null;
 
-        // 1. Try single predicate (simplest, most readable)
         for (const pred of predicates) {
             const xpath = `//${tag}${pred.expr}`;
             if (this._isXPathUnique(xpath)) return xpath;
         }
 
-        // 2. Combine 2 predicates for uniqueness (conditional identification)
         for (let i = 0; i < predicates.length; i++) {
             for (let j = i + 1; j < predicates.length; j++) {
                 const xpath = `//${tag}${predicates[i].expr}${predicates[j].expr}`;
@@ -233,7 +220,6 @@ export class SelectorEngine {
             }
         }
 
-        // 3. Try with ancestor context (scoped XPath)
         if (predicates.length > 0) {
             const scoped = this._getScopedXPath(el, tag, predicates);
             if (scoped) return scoped;
@@ -258,7 +244,6 @@ export class SelectorEngine {
             preds.push({ expr: `[@aria-label=${this._xq(ariaLabel.trim())}]`, weight: 1 });
         }
 
-        // Direct text content
         const text = this._getDirectText(el);
         const isSemantic = /^(H[1-6]|BUTTON|A|LABEL|LI|SUMMARY|FIGCAPTION|LEGEND|OPTION|TD|TH)$/.test(el.tagName);
         if (text && text.length >= 2 && text.length <= 60 && !/^\d+$/.test(text) && !/^\s*$/.test(text)) {
@@ -728,7 +713,6 @@ export class SelectorEngine {
         // Try to add parent context (validate uniqueness — duplicate parent classes exist)
         const parent = el.parentElement;
         if (parent && parent !== document.body) {
-            // Try parent ID first (if unique)
             if (parent.id && !this._isBogusValue(parent.id) && this._isIdUnique(parent.id)) {
                 const sel = `#${CSS.escape(parent.id)} > ${tag}:nth-of-type(${index})`;
                 if (this._isUniqueSafe(sel)) return sel;
@@ -740,7 +724,6 @@ export class SelectorEngine {
                 if (this._isUniqueSafe(sel)) return sel;
             }
 
-            // Try grandparent
             const grandparent = parent.parentElement;
             if (grandparent) {
                 if (grandparent.id && !this._isBogusValue(grandparent.id) && this._isIdUnique(grandparent.id)) {

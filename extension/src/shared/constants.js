@@ -3,7 +3,6 @@
  */
 
 export const CONFIG = {
-    // Estabilização de layout
     STABILIZATION: {
         LAYOUT_DELTA: 0.5,          // px — delta abaixo disso = frame estável
         MIN_STABLE_FRAMES: 15,      // frames consecutivos estáveis pra declarar estável
@@ -11,25 +10,21 @@ export const CONFIG = {
         MAX_TIMEOUT_MS: 3000        // timeout máximo de estabilização
     },
 
-    // Limites de output
     LIMITS: {
         MAX_CLASS_CHANGES: 5,
         MAX_MUTATION_BATCH: 100
     },
 
-    // Timers de eventos
     TIMERS: {
         SCROLL_DEBOUNCE_MS: 150,
         STORAGE_UPDATE_DEBOUNCE: 100
     },
 
-    // Acessibilidade
     ACCESSIBILITY: {
         OVERLAY_ARIA_LABEL: 'FlowCapture Recording Overlay',
         MIN_CONTRAST_RATIO: 4.5
     },
 
-    // UI
     UI: {
         OVERLAY_Z_INDEX: 2147483647,
         POPUP_WIDTH: 360,
@@ -37,28 +32,24 @@ export const CONFIG = {
         TIMER_UPDATE_INTERVAL: 1000
     },
 
-    // Geração de seletores
     SELECTOR: {
         // Fixed: removed 'show', 'active', 'visible' - these are semantic, not utility classes
         UTILITY_CLASS_PATTERN: /^(d-|flex-|align-|justify-|m[tbrl]?-|p[tbrl]?-|w-|h-|text-|bg-|border-|gap-)/,
         MAX_SELECTOR_LENGTH: 100
     },
 
-    // MutationObserver
     MUTATION_OBSERVER: {
         OBSERVE_ATTRIBUTES: ['class', 'style', 'data-state'],
         OBSERVE_CHARACTER_DATA: false,
         THROTTLE_RAF: true
     },
 
-    // Performance
     PERFORMANCE: {
         ENABLE_CACHE: true,
         CACHE_TYPE: 'WeakMap',
         LOG_PERFORMANCE: false
     },
 
-    // Export
     EXPORT: {
         VERSION: '4.0-workflow-engine',
         SUMMARY: 'Executable Workflow Steps',

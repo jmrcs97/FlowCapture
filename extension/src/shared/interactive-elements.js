@@ -11,9 +11,6 @@
  */
 
 export const INTERACTIVE_ELEMENTS = {
-    /**
-     * Native HTML tags that are clickable/interactive
-     */
     tags: new Set([
         'BUTTON',
         'A',
@@ -24,9 +21,6 @@ export const INTERACTIVE_ELEMENTS = {
         'DETAILS'
     ]),
 
-    /**
-     * ARIA roles that indicate interactive elements
-     */
     roles: new Set([
         'button',
         'link',
@@ -51,17 +45,13 @@ export const INTERACTIVE_ELEMENTS = {
     isInteractive(el) {
         if (!el) return false;
 
-        // Check native tags
         if (this.tags.has(el.tagName)) return true;
 
-        // Check ARIA roles
         const role = el.getAttribute('role');
         if (role && this.roles.has(role)) return true;
 
-        // Check onclick handler
         if (el.hasAttribute('onclick')) return true;
 
-        // Check tabindex=0 (keyboard accessible)
         if (el.getAttribute('tabindex') === '0') return true;
 
         return false;

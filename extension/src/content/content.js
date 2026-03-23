@@ -14,7 +14,6 @@
  * - OverlayUI:        Accessible recording overlay
  */
 
-// Guard against double injection
 if (window.hasFlowCapture) {
     if (window.overlay) window.overlay.toggle();
 } else {
@@ -44,7 +43,6 @@ if (window.hasFlowCapture) {
          * Initialize all modules via dynamic import
          */
         async init() {
-            // Wait for body if not present
             if (!document.body) {
                 await new Promise(resolve => {
                     const observer = new MutationObserver(() => {
@@ -58,7 +56,6 @@ if (window.hasFlowCapture) {
             }
 
             try {
-                // Dynamic imports (required for content scripts in MV3)
                 const [
                     { SelectorEngine },
                     { SessionManager },
@@ -85,7 +82,6 @@ if (window.hasFlowCapture) {
                 this.CONFIG = CONFIG;
                 this.ShortcutMatcher = ShortcutMatcher;
 
-                // Initialize core modules
                 this.selectorEngine = new SelectorEngine();
                 this.stateManager = new StateManager();
 
@@ -98,7 +94,6 @@ if (window.hasFlowCapture) {
                     (mutation) => this.sessionManager.addMutation(mutation)
                 );
 
-                // Initialize services
                 this.visualFeedback = new VisualFeedback();
                 this.visualFeedback.initializeAnimations();
 
@@ -107,18 +102,15 @@ if (window.hasFlowCapture) {
                     this.sessionManager
                 );
 
-                // Initialize UI
                 this.overlay = new OverlayUI(this.stateManager);
                 window.overlay = this.overlay;
 
-                // Check and restore state (page reload recovery)
                 const state = await this.stateManager.initialize();
                 if (state.isRecording) {
                     this._startRecordingInternal();
                 }
                 await this.overlay.restoreState();
 
-                // Load settings from storage
                 try {
                     const result = await chrome.storage.local.get('fcSettings');
                     const settings = result.fcSettings || {};
@@ -132,7 +124,6 @@ if (window.hasFlowCapture) {
                     this.expandShortcut = DEFAULT_SETTINGS.expandShortcut;
                 }
 
-                // Listen for settings changes from popup (live sync)
                 chrome.storage.onChanged.addListener((changes, areaName) => {
                     if (areaName === 'local' && changes.fcSettings) {
                         const s = changes.fcSettings.newValue || {};
@@ -148,7 +139,6 @@ if (window.hasFlowCapture) {
                     }
                 });
 
-                // Setup event listeners and message handlers
                 this._setupEventListeners(CONFIG);
                 this._setupMessageHandlers();
 
@@ -247,11 +237,9 @@ if (window.hasFlowCapture) {
                 }
             }, { capture: true, passive: true });
 
-            // Click capture with coordinates and modifiers
             document.addEventListener('click', (e) => {
                 if (!this.stateManager.isRecording) return;
                 try {
-                    // Ignore clicks on our own overlay
                     if (e.target.id === 'flow-capture-overlay-root' ||
                         e.target.closest?.('#flow-capture-overlay-root')) return;
 
@@ -278,7 +266,6 @@ if (window.hasFlowCapture) {
                 }
             }, true);
 
-            // Keydown capture (expanded: Enter, Escape, Tab, Space, Arrow keys)
             document.addEventListener('keydown', (e) => {
                 if (!this.stateManager.isRecording) return;
                 try {
@@ -325,7 +312,6 @@ if (window.hasFlowCapture) {
                 }
             }, true);
 
-            // Form submit capture
             document.addEventListener('submit', (e) => {
                 if (!this.stateManager.isRecording) return;
                 try {
@@ -371,7 +357,6 @@ if (window.hasFlowCapture) {
                 }
             }, true);
 
-            // Input change capture (for checkboxes, radios, selects)
             document.addEventListener('change', (e) => {
                 if (!this.stateManager.isRecording) return;
                 try {
@@ -386,7 +371,6 @@ if (window.hasFlowCapture) {
                 }
             }, true);
 
-            // Focus tracking (for form field navigation)
             document.addEventListener('focus', (e) => {
                 if (!this.stateManager.isRecording) return;
                 try {
@@ -406,7 +390,6 @@ if (window.hasFlowCapture) {
                 }
             }, true);
 
-            // Scroll capture with debounce
             let scrollTimeout = null;
             let scrollStart = null;
 
